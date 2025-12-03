@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Jyotish Calendar - Muhurat Timings</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#FF6B35">
+</head>
+<body>
+    <!-- Toast Notification Container -->
+    <div id="toastContainer" class="toast-container"></div>
+
+    <!-- Main Container -->
+    <div id="app" class="app-container">
+        
+        <!-- Admin Login Modal -->
+        <div id="loginModal" class="modal">
+            <div class="modal-content login-modal">
+                <div class="modal-header">
+                    <h3>🕉️ Admin Login</h3>
+                </div>
+                <div class="modal-body">
+                    <p style="text-align: center; margin-bottom: 30px; color: #666;">
+                        Sign in with Google to access admin features
+                    </p>
+                    <button id="googleSignInBtn" class="google-signin-btn">
+                        <svg width="18" height="18" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48">
+                            <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
+                            <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
+                            <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
+                            <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
+                        </svg>
+                        Sign in with Google
+                    </button>
+                    <button class="modal-btn cancel" onclick="closeLoginModal()" style="margin-top: 15px; width: 100%;">Cancel</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 2FA Setup Modal -->
+        <div id="setup2FAModal" class="modal">
+            <div class="modal-content login-modal">
+                <div class="modal-header">
+                    <h3>🔐 Setup 2FA Authentication</h3>
+                </div>
+                <div class="modal-body">
+                    <p style="text-align: center; margin-bottom: 20px; color: #666;">
+                        Scan this QR code with Google Authenticator app
+                    </p>
+                    <div id="qrCodeContainer" style="text-align: center; margin: 20px 0;">
+                        <canvas id="qrCanvas" style="max-width: 250px; height: auto; margin: 0 auto; display: block;"></canvas>
+                    </div>
+                    <div style="background: #f5f5f5; padding: 15px; border-radius: 8px; margin: 20px 0;">
+                        <p style="font-size: 0.9rem; color: #666; margin-bottom: 8px; text-align: center;">Manual Entry Key:</p>
+                        <p id="secretKeyDisplay" style="font-family: monospace; font-size: 1.1rem; text-align: center; word-break: break-all; color: #000; font-weight: 600;"></p>
+                    </div>
+                    <div class="form-group">
+                        <label>Enter 6-digit code from app</label>
+                        <input type="text" id="verifyOtpInput" class="form-input" placeholder="000000" maxlength="6" pattern="[0-9]{6}">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="modal-btn cancel" onclick="close2FASetupModal()">Cancel</button>
+                    <button id="verify2FABtn" class="modal-btn primary">Verify & Enable</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 2FA Verify Modal -->
+        <div id="verify2FAModal" class="modal">
+            <div class="modal-content login-modal">
+                <div class="modal-header">
+                    <h3>🔐 Enter 2FA Code</h3>
+                </div>
+                <div class="modal-body">
+                    <p style="text-align: center; margin-bottom: 30px; color: #666;">
+                        Enter the 6-digit code from your authenticator app
+                    </p>
+                    <div class="form-group">
+                        <input type="text" id="otp2FAInput" class="form-input" placeholder="000000" maxlength="6" pattern="[0-9]{6}" style="text-align: center; font-size: 1.5rem; letter-spacing: 0.5rem;">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="modal-btn cancel" onclick="close2FAVerifyModal()">Cancel</button>
+                    <button id="submit2FABtn" class="modal-btn primary">Verify</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Header -->
+        <header class="app-header">
+            <div class="header-content">
+                <h1 class="app-title">🕉️ Jyotish Muhurat Calendar</h1>
+                <div class="header-actions">
+                    <div id="userInfo" class="user-info" style="display: none;">
+                        <img id="userPhoto" class="user-photo" src="" alt="User">
+                        <span id="userName" class="user-name"></span>
+                        <button id="logoutBtn" class="logout-btn">Logout</button>
+                    </div>
+                    <button id="adminToggleBtn" class="admin-toggle-btn">Admin Mode</button>
+                </div>
+            </div>
+        </header>
+
+        <!-- Public View -->
+        <div id="publicView" class="view-container active">
+            
+            <!-- Single Toggle Button -->
+            <div class="controls-wrapper">
+                <button id="viewToggleBtn" class="view-toggle-btn">
+                    <span id="viewToggleIcon">📅</span>
+                    <span id="viewToggleText">Switch to List View</span>
+                </button>
+            </div>
+
+            <!-- Calendar View -->
+            <div id="calendarContainer" class="calendar-container">
+                <div class="calendar-header">
+                    <button id="prevMonthBtn" class="month-nav-btn">← Previous</button>
+                    <h2 id="currentMonthYear" class="month-title"></h2>
+                    <button id="nextMonthBtn" class="month-nav-btn">Next →</button>
+                </div>
+                <div id="calendarGrid" class="calendar-grid"></div>
+            </div>
+
+            <!-- List View -->
+            <div id="listContainer" class="list-container" style="display: none;">
+                <div id="entryList" class="entry-list"></div>
+            </div>
+        </div>
+
+        <!-- Admin View -->
+        <div id="adminView" class="view-container">
+            
+            <!-- Admin Dashboard -->
+            <div class="admin-dashboard">
+                <h2 class="dashboard-title">Admin Dashboard</h2>
+                
+                <!-- Statistics Cards -->
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-value" id="statPending">0</div>
+                        <div class="stat-label">Pending Review</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="statThisMonth">0</div>
+                        <div class="stat-label">Added This Month</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="statTotal">0</div>
+                        <div class="stat-label">Total Entries</div>
+                    </div>
+                </div>
+
+                <!-- Admin Action Buttons -->
+                <div class="admin-actions-wrapper">
+                    <div class="admin-actions">
+                        <button id="addEntryBtn" class="admin-btn primary">➕ Add Entry</button>
+                        <button id="reviewEntryBtn" class="admin-btn secondary">📋 Review Entries</button>
+                        <button id="confirmedEntryBtn" class="admin-btn secondary">✅ Confirmed Entries</button>
+                        <button id="adminCalendarBtn" class="admin-btn secondary">📅 Calendar View</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Admin List View -->
+            <div id="adminListView" class="admin-list-view" style="display: none;">
+                <button class="back-btn" onclick="showAdminDashboard()">← Back to Dashboard</button>
+                <h3>Confirmed Entries</h3>
+                <div id="adminEntryList" class="entry-list admin-list"></div>
+            </div>
+
+            <!-- Admin Calendar View -->
+            <div id="adminCalendarView" class="admin-calendar-view" style="display: none;">
+                <button class="back-btn" onclick="showAdminDashboard()">← Back to Dashboard</button>
+                <div class="calendar-header">
+                    <button id="adminPrevMonthBtn" class="month-nav-btn">← Previous</button>
+                    <h2 id="adminCurrentMonthYear" class="month-title"></h2>
+                    <button id="adminNextMonthBtn" class="month-nav-btn">Next →</button>
+                </div>
+                <div id="adminCalendarGrid" class="calendar-grid"></div>
+            </div>
+
+            <!-- Review Entries View -->
+            <div id="reviewEntriesView" class="review-entries-view" style="display: none;">
+                <button class="back-btn" onclick="showAdminDashboard()">← Back to Dashboard</button>
+                <div class="review-header">
+                    <h3>Pending Entries for Review</h3>
+                </div>
+                <div id="reviewEntryList" class="entry-list review-list"></div>
+            </div>
+        </div>
+
+        <!-- Modal for Add/Edit Entry -->
+        <div id="addEntryModal" class="modal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3 id="entryModalTitle">Add New Entry</h3>
+                    <button class="close-btn" onclick="closeAddEntryModal()">✕</button>
+                </div>
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label>Start Date & Time</label>
+                        <input type="datetime-local" id="startDateTime" class="form-input">
+                    </div>
+
+                    <div class="form-group">
+                        <label>End Date & Time</label>
+                        <input type="datetime-local" id="endDateTime" class="form-input">
+                    </div>
+
+                    <div class="form-group">
+                        <label>Good Color</label>
+                        <div class="color-palette" id="goodColorPalette"></div>
+                        <input type="text" id="selectedGoodColor" class="form-input" readonly placeholder="No color selected">
+                    </div>
+
+                    <div class="form-group">
+                        <label>Bad Color</label>
+                        <div class="color-palette" id="badColorPalette"></div>
+                        <input type="text" id="selectedBadColor" class="form-input" readonly placeholder="No color selected">
+                    </div>
+
+                    <div class="form-group">
+                        <label>Notes (Optional)</label>
+                        <textarea id="entryNotes" class="form-input" rows="2" placeholder="Any additional notes..."></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="modal-btn cancel" onclick="closeAddEntryModal()">Cancel</button>
+                    <button id="saveEntryBtn" class="modal-btn primary">Save Entry</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Entry Confirmation Modal -->
+        <div id="confirmEntryModal" class="modal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3>Confirm Entry</h3>
+                    <button class="close-btn" onclick="closeConfirmEntryModal()">✕</button>
+                </div>
+                <div class="modal-body">
+                    <div id="confirmEntryContent" class="confirm-entry-content"></div>
+                </div>
+                <div class="modal-footer">
+                    <button class="modal-btn cancel" onclick="closeConfirmEntryModal()">Cancel</button>
+                    <button id="finalSaveBtn" class="modal-btn primary">Confirm & Save</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Modal for Day View -->
+        <div id="dayViewModal" class="modal">
+            <div class="modal-content day-view-modal">
+                <div class="modal-header">
+                    <h3 id="dayViewTitle">Day Entries</h3>
+                    <button class="close-btn" onclick="closeDayViewModal()">✕</button>
+                </div>
+                <div class="modal-body">
+                    <div id="dayViewEntries" class="day-entries"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Loading Spinner -->
+        <div id="loadingSpinner" class="loading-spinner" style="display: none;">
+            <div class="spinner"></div>
+        </div>
+
+        <!-- Footer Credit -->
+        <footer class="app-footer">
+            <p>Developed by <a href="mailto:hodarsagar@gmail.com">Sagar Hodar</a></p>
+        </footer>
+
+    </div>
+
+    <!-- QR Code Library -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+    
+    <!-- TOTP Library for 2FA -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/otpauth/9.1.4/otpauth.umd.min.js"></script>
+    
+    <!-- App Configuration and Logic -->
+    <script src="firebase-config.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>

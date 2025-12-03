@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Jyotish Calendar</title>
+    <style>
+        /* Global Styles */
+        :root {
+            --bg: #fff;
+            --text: #000;
+            --accent: #FF6B35;
+            --border: #ddd;
+            --good: #008000;
+            --bad: #FF0000;
+            --bad-time: #000;
+            --shadow: rgba(0,0,0,0.1);
+        }
+        .dark {
+            --bg: #121212;
+            --text: #fff;
+            --accent: #FF6B35;
+            --border: #333;
+            --shadow: rgba(255,255,255,0.1);
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: sans-serif; background: var(--bg); color: var(--text); line-height: 1.5; }
+        button { cursor: pointer; border: none; padding: 8px 16px; border-radius: 4px; background: var(--accent); color: #fff; font-weight: bold; }
+        button:hover { opacity: 0.9; }
+
+        /* Header */
+        header { position: fixed; top: 0; width: 100%; background: var(--bg); box-shadow: 0 2px 4px var(--shadow); padding: 10px; display: flex; justify-content: space-between; align-items: center; z-index: 10; }
+        header h1 { font-size: 1.2rem; }
+        header nav { display: flex; gap: 10px; }
+        header button { font-size: 0.9rem; }
+
+        /* Main */
+        main { margin-top: 60px; padding: 10px; }
+
+        /* Views */
+        .view { display: none; }
+        .view.active { display: block; }
+
+        /* Calendar */
+        .calendar-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+        .calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px; }
+        .calendar-day { background: var(--bg); border: 1px solid var(--border); border-radius: 4px; padding: 5px; min-height: 60px; cursor: pointer; position: relative; }
+        .calendar-day.today { border-color: var(--accent); font-weight: bold; }
+        .calendar-day.other { opacity: 0.5; }
+        .day-number { font-size: 0.9rem; }
+        .day-indicators { display: flex; justify-content: center; gap: 5px; position: absolute; bottom: 5px; left: 0; right: 0; }
+        .indicator { width: 10px; height: 10px; border-radius: 50%; }
+        .warning { font-size: 0.8rem; color: var(--bad-time); }
+
+        /* List */
+        .entry-list { display: flex; flex-direction: column; gap: 10px; }
+        .entry-card { background: var(--bg); border: 1px solid var(--border); border-radius: 4px; padding: 10px; }
+        .entry-actions { display: flex; gap: 5px; margin-top: 10px; }
+        .entry-actions button { background: #888; }
+        .entry-actions button.delete { background: var(--bad); }
+
+        /* Modal */
+        .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); justify-content: center; align-items: center; z-index: 20; }
+        .modal.active { display: flex; }
+        .modal-content { background: var(--bg); padding: 20px; border-radius: 8px; max-width: 90%; width: 400px; box-shadow: 0 4px 8px var(--shadow); }
+        .form-group { margin-bottom: 10px; }
+        .form-group label { display: block; font-weight: bold; }
+        .form-input { width: 100%; padding: 8px; border: 1px solid var(--border); border-radius: 4px; }
+        .color-palette { display: grid; grid-template-columns: repeat(auto-fill, minmax(30px, 1fr)); gap: 5px; }
+        .color-option { height: 30px; border-radius: 4px; border: 2px solid transparent; cursor: pointer; }
+        .color-option.selected { border-color: var(--text); }
+
+        /* Day View */
+        .day-entries { display: flex; flex-direction: column; gap: 10px; }
+        .day-entry { border-left: 4px solid var(--accent); padding: 10px; background: var(--bg); border-radius: 4px; }
+
+        /* Responsive */
+        @media (max-width: 600px) {
+            header { flex-direction: column; }
+            header nav { flex-wrap: wrap; justify-content: center; }
+            .calendar-grid { grid-template-columns: repeat(7, 1fr); }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>🕉️ Jyotish Muhurat Calendar</h1>
+        <nav>
+            <button onclick="showView('calendar')">Calendar</button>
+            <button onclick="showView('list')">List</button>
+            <button onclick="addEntry()">Add</button>
+            <button onclick="toggleTheme()">Toggle Theme</button>
+        </nav>
+    </header>
+    <main>
+        <div id="calendar-view" class="view active">
+            <div class="calendar-header">
+                <button onclick="navigateMonth(-1)">←</button>
+                <h2 id="calendar-title"></h2>
+                <button onclick="navigateMonth(1)">→</button>
+            </div>
+            <div id="calendar-grid" class="calendar-grid"></div>
+        </div>
+        <div id="list-view" class="view">
+            <div id="entry-list" class="entry-list"></div>
+        </div>
+    </main>
+    <!-- Form Modal -->
+    <div id="form-modal" class="modal">
+        <div class="modal-content">
+            <h3 id="form-title">Add Entry</h3>
+            <div class="form-group"><label>Start</label><input type="datetime-local" id="start-dt" class="form-input"></div>
+            <div class="form-group"><label>End</label><input type="datetime-local" id="end-dt" class="form-input"></div>
+            <div class="form-group"><label>Good Color</label><div id="good-palette" class="color-palette"></div><input id="good-sel" readonly class="form-input"></div>
+            <div class="form-group"><label>Bad Color</label><div id="bad-palette" class="color-palette"></div><input id="bad-sel" readonly class="form-input"></div>
+            <div class="form-group"><label>Notes</label><textarea id="notes" class="form-input"></textarea></div>
+            <button onclick="saveForm()">Save</button>
+            <button onclick="closeModal('form-modal')">Cancel</button>
+        </div>
+    </div>
+    <!-- Day Modal -->
+    <div id="day-modal" class="modal">
+        <div class="modal-content">
+            <h3 id="day-title"></h3>
+            <div id="day-entries" class="day-entries"></div>
+            <button onclick="closeModal('day-modal')">Close</button>
+        </div>
+    </div>
+    <script>
+        // Data & State
+        let entries = JSON.parse(localStorage.getItem('entries')) || [];
+        let currentDate = new Date();
+        let editingId = null;
+        let selectedGood = null;
+        let selectedBad = null;
+        const COLOR_PALETTE = [
+            {name: 'Black', hex: '#000000'}, {name: 'White', hex: '#FFFFFF'}, {name: 'Red', hex: '#FF0000'},
+            {name: 'Green', hex: '#008000'}, {name: 'Blue', hex: '#0000FF'}, {name: 'Yellow', hex: '#FFFF00'},
+            {name: 'Orange', hex: '#FFA500'}, {name: 'Purple', hex: '#800080'}, {name: 'Cyan', hex: '#00FFFF'},
+            {name: 'Magenta', hex: '#FF00FF'}, {name: 'Gray', hex: '#808080'}, {name: 'Maroon', hex: '#800000'},
+            {name: 'Navy', hex: '#000080'}, {name: 'Brown', hex: '#A52A2A'}, {name: 'Pink', hex: '#FFC0CB'},
+            {name: 'Indigo', hex: '#4B0082'}
+        ];
+
+        // Init
+        showView('calendar');
+
+        // Views
+        function showView(view) {
+            document.getElementById('calendar-view').classList.toggle('active', view === 'calendar');
+            document.getElementById('list-view').classList.toggle('active', view === 'list');
+            if (view === 'calendar') renderCalendar();
+            if (view === 'list') renderList();
+        }
+
+        // Theme
+        function toggleTheme() {
+            document.body.classList.toggle('dark');
+        }
+
+        // Calendar
+        function renderCalendar() {
+            const year = currentDate.getFullYear(), month = currentDate.getMonth();
+            document.getElementById('calendar-title').textContent = new Date(year, month).toLocaleString('default', {month: 'long', year: 'numeric'});
+            const grid = document.getElementById('calendar-grid'); grid.innerHTML = '';
+            const firstDay = new Date(year, month, 1).getDay();
+            const daysInMonth = new Date(year, month + 1, 0).getDate();
+            const prevDays = new Date(year, month, 0).getDate();
+            ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].forEach(d => { const h = document.createElement('div'); h.textContent = d; h.className = 'calendar-day-header'; grid.append(h); });
+            for (let i = firstDay - 1; i >= 0; i--) grid.append(createDayCell(prevDays - i, month - 1, year, true));
+            const today = new Date();
+            for (let d = 1; d <= daysInMonth; d++) {
+                const cell = createDayCell(d, month, year, false);
+                if (d === today.getDate() && month === today.getMonth() && year === today.getFullYear()) cell.classList.add('today');
+                grid.append(cell);
+            }
+            const filled = firstDay + daysInMonth, fillers = (filled % 7 === 0 ? 0 : 7 - (filled % 7));
+            for (let d = 1; d <= fillers; d++) grid.append(createDayCell(d, month + 1, year, true));
+        }
+        function createDayCell(d, m, y, other) {
+            const cell = document.createElement('div'); cell.className = `calendar-day ${other ? 'other' : ''}`;
+            cell.innerHTML = `<div class="day-number">${d}</div><div class="day-indicators"></div>`;
+            cell.onclick = () => openDay(new Date(y, m, d));
+            const dayStart = new Date(y, m, d, 0,0,0), dayEnd = new Date(y, m, d, 23,59,59);
+            const dayEntries = entries.filter(e => new Date(e.startDate) < dayEnd && new Date(e.endDate) > dayStart);
+            if (dayEntries.length) {
+                const inds = cell.querySelector('.day-indicators');
+                if (dayEntries.some(e => e.goodColor)) inds.append(createIndicator('--good'));
+                if (dayEntries.some(e => e.badColor)) inds.append(createIndicator('--bad'));
+                if (dayEntries.some(e => !e.goodColor && !e.badColor)) inds.innerHTML += '<div class="warning indicator">⚠</div>';
+            }
+            return cell;
+        }
+        function createIndicator(color) {
+            const div = document.createElement('div'); div.className = 'indicator'; div.style.background = `var(${color})`; return div;
+        }
+        function navigateMonth(delta) {
+            currentDate.setMonth(currentDate.getMonth() + delta); renderCalendar();
+        }
+
+        // List
+        function renderList() {
+            const list = document.getElementById('entry-list'); list.innerHTML = '';
+            entries.sort((a,b) => new Date(b.startDate) - new Date(a.startDate));
+            entries.forEach(e => list.append(createEntryCard(e)));
+        }
+        function createEntryCard(e) {
+            const card = document.createElement('div'); card.className = 'entry-card';
+            const isBadTime = !e.goodColor && !e.badColor;
+            card.innerHTML = `
+                <div>${formatDateRange(e.startDate, e.endDate)}</div>
+                ${e.goodColor ? `<div style="background:${e.goodColor.hex}">Good: ${e.goodColor.name}</div>` : ''}
+                ${e.badColor ? `<div style="background:${e.badColor.hex}">Bad: ${e.badColor.name}</div>` : ''}
+                ${isBadTime ? '<div>Bad Time ⚠</div>' : ''}
+                <p>${e.notes || ''}</p>
+            `;
+            const actions = document.createElement('div'); actions.className = 'entry-actions';
+            const editBtn = document.createElement('button'); editBtn.textContent = 'Edit'; editBtn.onclick = () => editEntry(e.id);
+            const delBtn = document.createElement('button'); delBtn.textContent = 'Delete'; delBtn.className = 'delete'; delBtn.onclick = () => deleteEntry(e.id);
+            actions.append(editBtn, delBtn); card.append(actions);
+            return card;
+        }
+
+        // Day View
+        function openDay(date) {
+            document.getElementById('day-title').textContent = date.toLocaleDateString();
+            renderDay(date);
+            document.getElementById('day-modal').classList.add('active');
+        }
+        function renderDay(date) {
+            const cont = document.getElementById('day-entries'); cont.innerHTML = '';
+            const dayStart = new Date(date); dayStart.setHours(0,0,0,0);
+            const dayEnd = new Date(date); dayEnd.setHours(23,59,59,999);
+            let dayEntries = entries.filter(e => new Date(e.startDate) < dayEnd && new Date(e.endDate) > dayStart);
+            dayEntries.sort((a,b) => new Date(a.startDate) - new Date(b.startDate));
+            dayEntries.forEach(e => {
+                const div = document.createElement('div'); div.className = 'day-entry';
+                const isBadTime = !e.goodColor && !e.badColor;
+                div.innerHTML = `
+                    <span>${formatTimeRange(e.startDate, e.endDate)}</span>
+                    ${e.goodColor ? `<div style="background:${e.goodColor.hex}">Good: ${e.goodColor.name}</div>` : ''}
+                    ${e.badColor ? `<div style="background:${e.badColor.hex}">Bad: ${e.badColor.name}</div>` : ''}
+                    ${isBadTime ? '<div>Bad Time ⚠</div>' : ''}
+                    <p>${e.notes || ''}</p>
+                `;
+                cont.append(div);
+            });
+            if (!dayEntries.length) cont.innerHTML = '<p>No entries</p>';
+        }
+
+        // Form
+        function addEntry() {
+            editingId = null;
+            document.getElementById('form-title').textContent = 'Add Entry';
+            resetForm();
+            setupPalettes();
+            document.getElementById('form-modal').classList.add('active');
+        }
+        function editEntry(id) {
+            const e = entries.find(ent => ent.id === id);
+            if (!e) return;
+            editingId = id;
+            document.getElementById('form-title').textContent = 'Edit Entry';
+            document.getElementById('start-dt').value = new Date(e.startDate).toISOString().slice(0,16);
+            document.getElementById('end-dt').value = new Date(e.endDate).toISOString().slice(0,16);
+            document.getElementById('notes').value = e.notes || '';
+            selectedGood = e.goodColor; selectedBad = e.badColor;
+            document.getElementById('good-sel').value = e.goodColor?.name || '';
+            document.getElementById('bad-sel').value = e.badColor?.name || '';
+            setupPalettes();
+            document.getElementById('form-modal').classList.add('active');
+        }
+        function resetForm() {
+            const now = new Date(), start = new Date(now.getTime() + 3600000); start.setMinutes(0);
+            const end = new Date(start.getTime() + 7200000);
+            document.getElementById('start-dt').value = start.toISOString().slice(0,16);
+            document.getElementById('end-dt').value = end.toISOString().slice(0,16);
+            document.getElementById('notes').value = '';
+            document.getElementById('good-sel').value = '';
+            document.getElementById('bad-sel').value = '';
+            selectedGood = null; selectedBad = null;
+        }
+        function setupPalettes() {
+            const goodPal = document.getElementById('good-palette'); goodPal.innerHTML = '';
+            const badPal = document.getElementById('bad-palette'); badPal.innerHTML = '';
+            COLOR_PALETTE.forEach(c => {
+                const gBtn = document.createElement('button'); gBtn.className = 'color-option'; gBtn.style.background = c.hex;
+                gBtn.onclick = () => { selectedGood = c; document.getElementById('good-sel').value = c.name; updateSelected(goodPal, gBtn); };
+                goodPal.append(gBtn);
+                const bBtn = document.createElement('button'); bBtn.className = 'color-option'; bBtn.style.background = c.hex;
+                bBtn.onclick = () => { selectedBad = c; document.getElementById('bad-sel').value = c.name; updateSelected(badPal, bBtn); };
+                badPal.append(bBtn);
+            });
+            if (selectedGood) goodPal.querySelector(`[style*="background: ${selectedGood.hex}"]`).classList.add('selected');
+            if (selectedBad) badPal.querySelector(`[style*="background: ${selectedBad.hex}"]`).classList.add('selected');
+        }
+        function updateSelected(pal, btn) {
+            pal.querySelectorAll('.color-option').forEach(b => b.classList.remove('selected'));
+            btn.classList.add('selected');
+        }
+        function saveForm() {
+            const start = new Date(document.getElementById('start-dt').value);
+            const end = new Date(document.getElementById('end-dt').value);
+            const notes = document.getElementById('notes').value.trim();
+            if (end <= start) return alert('End must be after start');
+            const entry = {
+                id: editingId || Date.now(),
+                startDate: start.toISOString(),
+                endDate: end.toISOString(),
+                goodColor: selectedGood,
+                badColor: selectedBad,
+                notes
+            };
+            if (editingId) entries = entries.map(e => e.id === editingId ? entry : e);
+            else entries.push(entry);
+            localStorage.setItem('entries', JSON.stringify(entries));
+            closeModal('form-modal');
+            if (document.getElementById('calendar-view').classList.contains('active')) renderCalendar();
+            if (document.getElementById('list-view').classList.contains('active')) renderList();
+        }
+
+        // Delete
+        function deleteEntry(id) {
+            if (!confirm('Delete?')) return;
+            entries = entries.filter(e => e.id !== id);
+            localStorage.setItem('entries', JSON.stringify(entries));
+            renderList();
+        }
+
+        // Utils
+        function closeModal(id) { document.getElementById(id).classList.remove('active'); }
+        function formatDateRange(s, e) { return `${new Date(s).toLocaleString()} - ${new Date(e).toLocaleString()}`; }
+        function formatTimeRange(s, e) { return `${new Date(s).toLocaleTimeString()} - ${new Date(e).toLocaleTimeString()}`; }
+    </script>
+</body>
+</html>
