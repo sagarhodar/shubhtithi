@@ -1,43 +1,49 @@
 // ==========================================
-// Jyotish Calendar - Complete Updated app.js with 2FA
+// Jyotish Calendar - New Admin Workflow
+// Part 1: Core, Auth & Workflow State
 // ==========================================
 
 // Global State
 let currentView = 'public';
-let currentViewType = 'calendar'; // 'calendar' or 'list'
+let currentViewType = 'calendar';
 let currentDate = new Date();
-let adminCurrentDate = new Date();
-let selectedGoodColor = null;
-let selectedBadColor = null;
 let currentUser = null;
-let editingEntryId = null;
-let pendingEntryData = null;
 let totpSecret = null;
 let user2FAEnabled = false;
 
-// Color Palette
+// Admin Workflow State
+let workflowStep = 0;
+let adminCurrentDate = new Date();
+let selectedFromDate = null;
+let selectedToDate = null;
+let selectedFromTime = null;
+let selectedToTime = null;
+let selectedGoodColors = [];
+let selectedBadColors = [];
+let isBadTime = false;
+
+// Color Palette - Fixed 16 colors
 const COLOR_PALETTE = [
-    { name: 'Black', hex: '#000000' },
-    { name: 'White', hex: '#FFFFFF' },
-    { name: 'Red', hex: '#FF0000' },
-    { name: 'Green', hex: '#008000' },
-    { name: 'Blue', hex: '#0000FF' },
-    { name: 'Yellow', hex: '#FFFF00' },
-    { name: 'Orange', hex: '#FFA500' },
-    { name: 'Purple', hex: '#800080' },
-    { name: 'Cyan', hex: '#00FFFF' },
-    { name: 'Magenta', hex: '#FF00FF' },
-    { name: 'Gray', hex: '#808080' },
-    { name: 'Maroon', hex: '#800000' },
-    { name: 'Navy', hex: '#000080' },
-    { name: 'Brown', hex: '#A52A2A' },
-    { name: 'Pink', hex: '#FFC0CB' },
-    { name: 'Indigo', hex: '#4B0082' }
+    '#000000', // Black
+    '#FFFFFF', // White
+    '#FF0000', // Red
+    '#008000', // Green
+    '#0000FF', // Blue
+    '#FFFF00', // Yellow
+    '#FFA500', // Orange
+    '#800080', // Purple
+    '#00FFFF', // Cyan
+    '#FF00FF', // Magenta
+    '#808080', // Gray
+    '#800000', // Maroon
+    '#000080', // Navy
+    '#A52A2A', // Brown
+    '#FFC0CB', // Pink
+    '#4B0082'  // Indigo
 ];
 
-// Firestore Collections
+// Collections
 const ENTRIES_COLLECTION = 'calendar_entries';
-const PENDING_ENTRIES_COLLECTION = 'pending_entries';
 const USER_SETTINGS_COLLECTION = 'user_settings';
 
 // ==========================================
@@ -51,17 +57,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
 function initializeApp() {
     showPublicView();
-    setupColorPalettes();
 }
 
 // ==========================================
 // Auth Listener
 // ==========================================
 function setupAuthListener() {
-    if (typeof auth === 'undefined') {
-        console.warn('Auth not defined');
-        return;
-    }
+    if (typeof auth === 'undefined') return;
 
     auth.onAuthStateChanged((user) => {
         currentUser = user;
@@ -73,8 +75,6 @@ function setupAuthListener() {
             const userNameEl = document.getElementById('userName');
             if (userNameEl) userNameEl.textContent = user.displayName || 'Admin';
             closeLoginModal();
-            
-            // Check if user has 2FA enabled
             check2FAStatus();
         } else {
             const userInfoEl = document.getElementById('userInfo');
@@ -83,11 +83,7 @@ function setupAuthListener() {
             if (currentView === 'admin') {
                 showPublicView();
                 currentView = 'public';
-                const adminToggleBtn = document.getElementById('adminToggleBtn');
-                if (adminToggleBtn) {
-                    adminToggleBtn.textContent = 'Admin Mode';
-                    adminToggleBtn.style.background = 'linear-gradient(135deg, #4ECDC4 0%, #44A08D 100%)';
-                }
+                updateAdminToggleButton();
             }
         }
     });
@@ -106,7 +102,6 @@ function setupEventListeners() {
     const logoutBtn = document.getElementById('logoutBtn');
     if (logoutBtn) logoutBtn.addEventListener('click', logout);
 
-    // Single toggle button for view
     const viewToggleBtn = document.getElementById('viewToggleBtn');
     if (viewToggleBtn) viewToggleBtn.addEventListener('click', toggleView);
 
@@ -115,74 +110,22 @@ function setupEventListeners() {
     if (prevMonthBtn) prevMonthBtn.addEventListener('click', () => navigateMonth(-1));
     if (nextMonthBtn) nextMonthBtn.addEventListener('click', () => navigateMonth(1));
 
-    const adminPrevMonthBtn = document.getElementById('adminPrevMonthBtn');
-    const adminNextMonthBtn = document.getElementById('adminNextMonthBtn');
-    if (adminPrevMonthBtn) adminPrevMonthBtn.addEventListener('click', () => navigateAdminMonth(-1));
-    if (adminNextMonthBtn) adminNextMonthBtn.addEventListener('click', () => navigateAdminMonth(1));
+    const adminPrevMonth = document.getElementById('adminPrevMonth');
+    const adminNextMonth = document.getElementById('adminNextMonth');
+    if (adminPrevMonth) adminPrevMonth.addEventListener('click', () => navigateAdminMonth(-1));
+    if (adminNextMonth) adminNextMonth.addEventListener('click', () => navigateAdminMonth(1));
 
-    const addEntryBtn = document.getElementById('addEntryBtn');
-    const reviewEntryBtn = document.getElementById('reviewEntryBtn');
-    const confirmedEntryBtn = document.getElementById('confirmedEntryBtn');
-    const adminCalendarBtn = document.getElementById('adminCalendarBtn');
-
-    if (addEntryBtn) addEntryBtn.addEventListener('click', openAddEntryModal);
-    if (reviewEntryBtn) reviewEntryBtn.addEventListener('click', showReviewEntries);
-    if (confirmedEntryBtn) confirmedEntryBtn.addEventListener('click', showConfirmedEntries);
-    if (adminCalendarBtn) adminCalendarBtn.addEventListener('click', showAdminCalendar);
-
-    const saveEntryBtn = document.getElementById('saveEntryBtn');
-    const finalSaveBtn = document.getElementById('finalSaveBtn');
-
-    if (saveEntryBtn) saveEntryBtn.addEventListener('click', validateAndShowConfirm);
-    if (finalSaveBtn) finalSaveBtn.addEventListener('click', () => {
-        if (!pendingEntryData && !editingEntryId) {
-            showToast('Please fill and confirm the entry before saving.', 'error');
-            return;
-        }
-        saveNewEntry();
-    });
-
-    // 2FA Setup
     const verify2FABtn = document.getElementById('verify2FABtn');
     if (verify2FABtn) verify2FABtn.addEventListener('click', verify2FASetup);
 
     const submit2FABtn = document.getElementById('submit2FABtn');
     if (submit2FABtn) submit2FABtn.addEventListener('click', verify2FACode);
 
-    // Modal close on outside click
     window.addEventListener('click', (e) => {
         if (e.target && e.target.classList && e.target.classList.contains('modal')) {
             closeAllModals();
         }
     });
-}
-
-// ==========================================
-// View Toggle
-// ==========================================
-function toggleView() {
-    const calendarContainer = document.getElementById('calendarContainer');
-    const listContainer = document.getElementById('listContainer');
-    const toggleText = document.getElementById('viewToggleText');
-    const toggleIcon = document.getElementById('viewToggleIcon');
-
-    if (currentViewType === 'calendar') {
-        // Switch to list
-        currentViewType = 'list';
-        if (calendarContainer) calendarContainer.style.display = 'none';
-        if (listContainer) listContainer.style.display = 'block';
-        if (toggleText) toggleText.textContent = 'Switch to Calendar View';
-        if (toggleIcon) toggleIcon.textContent = '📋';
-        loadListView();
-    } else {
-        // Switch to calendar
-        currentViewType = 'calendar';
-        if (calendarContainer) calendarContainer.style.display = 'block';
-        if (listContainer) listContainer.style.display = 'none';
-        if (toggleText) toggleText.textContent = 'Switch to List View';
-        if (toggleIcon) toggleIcon.textContent = '📅';
-        loadPublicCalendar();
-    }
 }
 
 // ==========================================
@@ -206,21 +149,14 @@ function signInWithGoogle() {
 }
 
 function logout() {
-    if (!auth) {
-        showToast('Auth not available', 'error');
-        return;
-    }
+    if (!auth) return;
     auth.signOut()
         .then(() => {
             showToast('Logged out successfully', 'info');
             showPublicView();
             currentView = 'public';
             user2FAEnabled = false;
-            const adminToggleBtn = document.getElementById('adminToggleBtn');
-            if (adminToggleBtn) {
-                adminToggleBtn.textContent = 'Admin Mode';
-                adminToggleBtn.style.background = 'linear-gradient(135deg, #4ECDC4 0%, #44A08D 100%)';
-            }
+            updateAdminToggleButton();
         })
         .catch((error) => {
             console.error('Logout error:', error);
@@ -237,110 +173,13 @@ function closeLoginModal() {
     const modal = document.getElementById('loginModal');
     if (modal) modal.classList.remove('active');
 }
-// ==========================================
-// 2FA Functions (WebCrypto-based TOTP, base32)
-// ==========================================
-// ==========================================
-// 2FA Functions (WebCrypto-based TOTP, base32)
-// Note: totpSecret and user2FAEnabled are globals declared at file top.
-// ==========================================
-
-// ---------- Base32 utils (RFC4648 minimal) ----------
-const _base32chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
-function base32Encode(bytes){
-  let bits = 0, value=0, output='';
-  for(let i=0;i<bytes.length;i++){
-    value = (value<<8) | bytes[i];
-    bits += 8;
-    while(bits >= 5){
-      output += _base32chars[(value >>> (bits-5)) & 31];
-      bits -= 5;
-    }
-  }
-  if(bits>0) output += _base32chars[(value << (5-bits)) & 31];
-  return output;
-}
-function base32Decode(str){
-  const clean = (''+str).replace(/=+$/,'').replace(/[^A-Z2-7]/ig,'').toUpperCase();
-  const bytes = [];
-  let bits=0, value=0;
-  for(let i=0;i<clean.length;i++){
-    const idx = _base32chars.indexOf(clean[i]);
-    if(idx<0) continue;
-    value = (value<<5) | idx;
-    bits += 5;
-    if(bits>=8){
-      bytes.push((value >>> (bits-8)) & 0xFF);
-      bits -= 8;
-    }
-  }
-  return new Uint8Array(bytes);
-}
-
-// ---------- Secure secret generation ----------
-function generateTOTPSecret(lenBytes = 10){
-  // lenBytes=10 -> ~16 base32 chars; increase for longer secrets
-  const arr = new Uint8Array(lenBytes);
-  crypto.getRandomValues(arr);
-  return base32Encode(arr).replace(/=/g,'');
-}
-
-// Keep your format helper (uses global totpSecret)
-function formatSecretKey(secret) {
-  if (!secret) return '';
-  const groups = secret.match(/.{1,4}/g);
-  return groups ? groups.join(' ') : secret;
-}
-
-// ---------- TOTP generation & verification (SHA-1 HMAC) ----------
-async function generateTOTP(secretBase32, forTime = null, digits = 6, period = 30){
-  const keyBytes = base32Decode(secretBase32);
-  const cryptoKey = await crypto.subtle.importKey(
-    'raw',
-    keyBytes,
-    { name: 'HMAC', hash: 'SHA-1' },
-    false,
-    ['sign']
-  );
-
-  const time = Math.floor((forTime ? Math.floor(forTime/1000) : Math.floor(Date.now()/1000)) / period);
-  const buffer = new ArrayBuffer(8);
-  const view = new DataView(buffer);
-  const high = Math.floor(time / 0x100000000);
-  const low = time & 0xffffffff;
-  view.setUint32(0, high);
-  view.setUint32(4, low);
-
-  const hmacBuf = await crypto.subtle.sign('HMAC', cryptoKey, buffer);
-  const hmac = new Uint8Array(hmacBuf);
-  const offset = hmac[hmac.length - 1] & 0xf;
-  const code = ((hmac[offset] & 0x7f) << 24) |
-               ((hmac[offset+1] & 0xff) << 16) |
-               ((hmac[offset+2] & 0xff) << 8) |
-               (hmac[offset+3] & 0xff);
-  const otp = (code % (10 ** digits)).toString().padStart(digits, '0');
-  return otp;
-}
-
-async function verifyTOTP(secretBase32, token, windowSteps = 4) {
-  const now = Date.now();
-  for (let i = -windowSteps; i <= windowSteps; i++) {
-    const t = now + (i * 30 * 1000); // period = 30 sec
-    const gen = await generateTOTP(secretBase32, t);
-    if (gen === token) return true;
-  }
-  return false;
-}
 
 // ==========================================
-// UI + Firestore integration (adapted)
-// NOTE: Do NOT redeclare totpSecret or user2FAEnabled here.
+// 2FA Functions
 // ==========================================
-
-// Check 2FA status from Firestore
 function check2FAStatus() {
     if (!currentUser) return;
-
+    
     db.collection(USER_SETTINGS_COLLECTION)
         .doc(currentUser.uid)
         .get()
@@ -350,7 +189,6 @@ function check2FAStatus() {
                 totpSecret = doc.data().totpSecret;
             } else {
                 user2FAEnabled = false;
-                totpSecret = null;
             }
         })
         .catch((error) => {
@@ -358,36 +196,33 @@ function check2FAStatus() {
         });
 }
 
-// Open setup modal and generate a new secret (client-only until verification)
 function open2FASetupModal() {
     if (!currentUser) return;
-
-    // Generate TOTP secret (secure)
+    
     const secret = generateTOTPSecret();
     totpSecret = secret;
+    
+    const otpauthUrl = `otpauth://totp/JyotishCalendar:${currentUser.email}?secret=${secret}&issuer=JyotishCalendar`;
+    
+const container = document.getElementById('qrCodeContainer');
 
-    // Build otpauth URL (RFC style) - URL-encode label and issuer
-    const label = encodeURIComponent(`${currentUser.email}`);
-    const issuer = encodeURIComponent('JyotishCalendar');
-    const otpauthUrl = `otpauth://totp/${issuer}:${label}?secret=${secret}&issuer=${issuer}&algorithm=SHA1&digits=6&period=30`;
+if (container && typeof QRCode !== 'undefined') {
+    // Clear previous QR if any
+    container.innerHTML = "";
 
-    // Render QR code to canvas (if QR library available)
-    const canvas = document.getElementById('qrCanvas');
-    if (canvas && typeof QRCode !== 'undefined') {
-        try { canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height); } catch(e){}
-        new QRCode(canvas, {
-            text: otpauthUrl,
-            width: 250,
-            height: 250
-        });
-    }
+    new QRCode(container, {
+        text: otpauthUrl,
+        width: 250,
+        height: 250
+    });
+}
 
-    // Display secret key (readable grouped)
+    
     const secretKeyDisplay = document.getElementById('secretKeyDisplay');
     if (secretKeyDisplay) {
         secretKeyDisplay.textContent = formatSecretKey(secret);
     }
-
+    
     const modal = document.getElementById('setup2FAModal');
     if (modal) modal.classList.add('active');
 }
@@ -399,56 +234,42 @@ function close2FASetupModal() {
     if (input) input.value = '';
 }
 
-// Verify setup: user enters current code from their authenticator app
-async function verify2FASetup() {
+function verify2FASetup() {
     const otpInput = document.getElementById('verifyOtpInput');
     if (!otpInput || !otpInput.value) {
         showToast('Please enter the 6-digit code', 'error');
         return;
     }
-
+    
     const code = otpInput.value.trim();
     if (code.length !== 6) {
         showToast('Code must be 6 digits', 'error');
         return;
     }
-
-    if (!totpSecret) {
-        showToast('No secret generated. Re-open setup.', 'error');
-        return;
-    }
-
-    try {
-        const ok = await verifyTOTP(totpSecret, code, 1);
-        if (ok) {
-            // Save secret to Firestore
-            db.collection(USER_SETTINGS_COLLECTION)
-                .doc(currentUser.uid)
-                .set({
-                    totpSecret: totpSecret,
-                    enabled2FA: true,
-                    setupDate: firebase.firestore.Timestamp.now()
-                })
-                .then(() => {
-                    user2FAEnabled = true;
-                    close2FASetupModal();
-                    showToast('2FA enabled successfully!', 'success');
-                    proceedToAdminMode();
-                })
-                .catch((error) => {
-                    console.error('Error saving 2FA:', error);
-                    showToast('Error enabling 2FA', 'error');
-                });
-        } else {
-            showToast('Invalid code. Please try again.', 'error');
-        }
-    } catch (err) {
-        console.error('TOTP verification error:', err);
-        showToast('Error verifying code', 'error');
+    
+    if (verifyTOTP(totpSecret, code)) {
+        db.collection(USER_SETTINGS_COLLECTION)
+            .doc(currentUser.uid)
+            .set({
+                totpSecret: totpSecret,
+                enabled2FA: true,
+                setupDate: firebase.firestore.Timestamp.now()
+            })
+            .then(() => {
+                user2FAEnabled = true;
+                close2FASetupModal();
+                showToast('2FA enabled successfully!', 'success');
+                proceedToAdminMode();
+            })
+            .catch((error) => {
+                console.error('Error saving 2FA:', error);
+                showToast('Error enabling 2FA', 'error');
+            });
+    } else {
+        showToast('Invalid code. Please try again.', 'error');
     }
 }
 
-// Open/close verify modal (when user needs to enter TOTP to switch to admin mode)
 function open2FAVerifyModal() {
     const modal = document.getElementById('verify2FAModal');
     if (modal) modal.classList.add('active');
@@ -463,63 +284,73 @@ function close2FAVerifyModal() {
     if (input) input.value = '';
 }
 
-// Verify existing TOTP to enter admin/edit mode
-async function verify2FACode() {
+function verify2FACode() {
     const otpInput = document.getElementById('otp2FAInput');
     if (!otpInput || !otpInput.value) {
         showToast('Please enter the 6-digit code', 'error');
         return;
     }
-
+    
     const code = otpInput.value.trim();
     if (code.length !== 6) {
         showToast('Code must be 6 digits', 'error');
         return;
     }
-
-    if (!totpSecret) {
-        // If we don't have secret locally, try to fetch from Firestore once (fallback)
-        try {
-            const doc = await db.collection(USER_SETTINGS_COLLECTION).doc(currentUser.uid).get();
-            if (doc.exists && doc.data().totpSecret) {
-                totpSecret = doc.data().totpSecret;
-            } else {
-                showToast('2FA not configured for this account', 'error');
-                return;
-            }
-        } catch (err) {
-            console.error('Error fetching secret:', err);
-            showToast('Error verifying 2FA', 'error');
-            return;
-        }
-    }
-
-    try {
-        const ok = await verifyTOTP(totpSecret, code, 1);
-        if (ok) {
-            close2FAVerifyModal();
-            showToast('Verified successfully!', 'success');
-            proceedToAdminMode();
-        } else {
-            showToast('Invalid code. Please try again.', 'error');
-        }
-    } catch (err) {
-        console.error('TOTP verification error:', err);
-        showToast('Error verifying code', 'error');
+    
+    if (verifyTOTP(totpSecret, code)) {
+        close2FAVerifyModal();
+        showToast('Verified successfully!', 'success');
+        proceedToAdminMode();
+    } else {
+        showToast('Invalid code. Please try again.', 'error');
     }
 }
 
-// The rest of your "proceedToAdminMode" remains unchanged
+function generateTOTPSecret() {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+    let secret = '';
+    for (let i = 0; i < 32; i++) {
+        secret += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return secret;
+}
+
+function formatSecretKey(secret) {
+    return secret.match(/.{1,4}/g).join(' ');
+}
+
+function verifyTOTP(secret, token) {
+    if (typeof OTPAuth === 'undefined') {
+        console.error('OTPAuth library not loaded');
+        return false;
+    }
+    
+    try {
+        const totp = new OTPAuth.TOTP({
+            secret: OTPAuth.Secret.fromBase32(secret),
+            digits: 6,
+            period: 30
+        });
+        
+        const delta = totp.validate({ token, window: 1 });
+        return delta !== null;
+    } catch (error) {
+        console.error('TOTP verification error:', error);
+        return false;
+    }
+}
+
 function proceedToAdminMode() {
     currentView = 'admin';
     showAdminView();
-    const adminToggleBtn = document.getElementById('adminToggleBtn');
-    if (adminToggleBtn) {
-        adminToggleBtn.textContent = 'Public View';
-        adminToggleBtn.style.background = 'linear-gradient(135deg, #E74C3C 0%, #C0392B 100%)';
-    }
+    updateAdminToggleButton();
 }
 
+// Continue in Part 2...
+// ==========================================
+// Add this to the end of app.js Part 1
+// Part 2: Workflow Steps & UI Rendering
+// ==========================================
 
 // ==========================================
 // Toast Notifications
@@ -556,22 +387,28 @@ function toggleAdminMode() {
             return;
         }
         
-        // Check if 2FA is setup
         if (!user2FAEnabled) {
-            // Need to setup 2FA
             open2FASetupModal();
         } else {
-            // Need to verify 2FA
             open2FAVerifyModal();
         }
     } else {
         currentView = 'public';
         showPublicView();
-        const adminToggleBtn = document.getElementById('adminToggleBtn');
-        if (adminToggleBtn) {
-            adminToggleBtn.textContent = 'Admin Mode';
-            adminToggleBtn.style.background = 'linear-gradient(135deg, #4ECDC4 0%, #44A08D 100%)';
-        }
+        updateAdminToggleButton();
+    }
+}
+
+function updateAdminToggleButton() {
+    const btn = document.getElementById('adminToggleBtn');
+    if (!btn) return;
+    
+    if (currentView === 'admin') {
+        btn.textContent = 'Public View';
+        btn.style.background = 'linear-gradient(135deg, #E74C3C 0%, #C0392B 100%)';
+    } else {
+        btn.textContent = 'Admin Mode';
+        btn.style.background = 'linear-gradient(135deg, #4ECDC4 0%, #44A08D 100%)';
     }
 }
 
@@ -592,85 +429,739 @@ function showAdminView() {
     const publicView = document.getElementById('publicView');
     if (adminView) adminView.classList.add('active');
     if (publicView) publicView.classList.remove('active');
-    showAdminDashboard();
-    loadAdminStats();
+    resetWorkflow();
+    renderAdminCalendar();
 }
 
-function showAdminDashboard() {
-    const dashboard = document.querySelector('.admin-dashboard');
-    const adminListView = document.getElementById('adminListView');
-    const adminCalendarView = document.getElementById('adminCalendarView');
-    const reviewEntriesView = document.getElementById('reviewEntriesView');
+function toggleView() {
+    const calendarContainer = document.getElementById('calendarContainer');
+    const listContainer = document.getElementById('listContainer');
+    const toggleText = document.getElementById('viewToggleText');
+    const toggleIcon = document.getElementById('viewToggleIcon');
 
-    if (dashboard) dashboard.style.display = 'block';
-    if (adminListView) adminListView.style.display = 'none';
-    if (adminCalendarView) adminCalendarView.style.display = 'none';
-    if (reviewEntriesView) reviewEntriesView.style.display = 'none';
+    if (currentViewType === 'calendar') {
+        currentViewType = 'list';
+        if (calendarContainer) calendarContainer.style.display = 'none';
+        if (listContainer) listContainer.style.display = 'block';
+        if (toggleText) toggleText.textContent = 'Switch to Calendar View';
+        if (toggleIcon) toggleIcon.textContent = '📋';
+        loadListView();
+    } else {
+        currentViewType = 'calendar';
+        if (calendarContainer) calendarContainer.style.display = 'block';
+        if (listContainer) listContainer.style.display = 'none';
+        if (toggleText) toggleText.textContent = 'Switch to List View';
+        if (toggleIcon) toggleIcon.textContent = '📅';
+        loadPublicCalendar();
+    }
 }
 
 // ==========================================
-// Color Palette Setup
+// Workflow Management
 // ==========================================
-function setupColorPalettes() {
-    const goodPalette = document.getElementById('goodColorPalette');
-    const badPalette = document.getElementById('badColorPalette');
+function resetWorkflow() {
+    workflowStep = 0;
+    selectedFromDate = null;
+    selectedToDate = null;
+    selectedFromTime = null;
+    selectedToTime = null;
+    selectedGoodColors = [];
+    selectedBadColors = [];
+    isBadTime = false;
+    renderWorkflowUI();
+}
 
-    if (!goodPalette || !badPalette) return;
+function renderWorkflowUI() {
+    const panelContent = document.getElementById('panelContent');
+    const panelButtons = document.getElementById('panelButtons');
+    if (!panelContent || !panelButtons) return;
+
+    switch (workflowStep) {
+        case 0:
+            renderStep0();
+            break;
+        case 1:
+            renderStep1();
+            break;
+        case 2:
+            renderStep2();
+            break;
+        case 3:
+            renderStep3();
+            break;
+        case 4:
+            renderStep4();
+            break;
+        case 5:
+            renderStep5();
+            break;
+    }
+
+    updatePanelButtons();
+}
+
+// ==========================================
+// STEP 0: Initial State
+// ==========================================
+function renderStep0() {
+    const panelContent = document.getElementById('panelContent');
+    panelContent.innerHTML = `
+        <div class="panel-title">Select First Date</div>
+        <div class="panel-info">
+            <div class="panel-info-line">Tap any date on the calendar to begin</div>
+        </div>
+    `;
+}
+
+// ==========================================
+// STEP 1: From Date Selected - Choose From Time
+// ==========================================
+function renderStep1() {
+    const panelContent = document.getElementById('panelContent');
+    const dateStr = formatDateShort(selectedFromDate);
+    
+    panelContent.innerHTML = `
+        <div class="panel-title">Select Start Time</div>
+        <div class="panel-info">
+            <div class="panel-info-line"><strong>From:</strong> ${dateStr}</div>
+        </div>
+        <div class="time-selector" id="timeSelector"></div>
+    `;
+
+    renderTimeSelector('timeSelector', (time) => {
+        selectedFromTime = time;
+        workflowStep = 2;
+        renderWorkflowUI();
+    });
+}
+
+// ==========================================
+// STEP 2: From Time Selected - Choose To Date
+// ==========================================
+function renderStep2() {
+    const panelContent = document.getElementById('panelContent');
+    const dateStr = formatDateShort(selectedFromDate);
+    
+    panelContent.innerHTML = `
+        <div class="panel-title">Start Selected</div>
+        <div class="panel-info">
+            <div class="panel-info-line"><strong>From:</strong> ${dateStr} | ${selectedFromTime}</div>
+            <div class="panel-info-line" style="margin-top: 10px; color: #FF6B35;">Now select SECOND date...</div>
+        </div>
+    `;
+}
+
+// ==========================================
+// STEP 3: To Date Selected - Choose To Time
+// ==========================================
+function renderStep3() {
+    const panelContent = document.getElementById('panelContent');
+    const fromDateStr = formatDateShort(selectedFromDate);
+    const toDateStr = formatDateShort(selectedToDate);
+    
+    panelContent.innerHTML = `
+        <div class="panel-title">Select End Time</div>
+        <div class="panel-info">
+            <div class="panel-info-line"><strong>From:</strong> ${fromDateStr} | ${selectedFromTime}</div>
+            <div class="panel-info-line"><strong>To:</strong> ${toDateStr}</div>
+        </div>
+        <div class="time-selector" id="timeSelector"></div>
+    `;
+
+    renderTimeSelector('timeSelector', (time) => {
+        selectedToTime = time;
+        workflowStep = 4;
+        renderWorkflowUI();
+    });
+}
+
+// ==========================================
+// STEP 4: Times Selected - Choose Colors
+// ==========================================
+function renderStep4() {
+    const panelContent = document.getElementById('panelContent');
+    const fromDateStr = formatDateShort(selectedFromDate);
+    const toDateStr = formatDateShort(selectedToDate);
+    
+    panelContent.innerHTML = `
+        <div class="panel-title">Choose Colors</div>
+        <div class="panel-info">
+            <div class="panel-info-line"><strong>From:</strong> ${fromDateStr} | ${selectedFromTime}</div>
+            <div class="panel-info-line"><strong>To:</strong> ${toDateStr} | ${selectedToTime}</div>
+        </div>
+        
+        <div class="color-section">
+            <div class="color-section-title">Choose GOOD Colors</div>
+            <div class="color-palette" id="goodColorPalette"></div>
+        </div>
+        
+        <div class="color-section">
+            <div class="color-section-title">Choose BAD Colors</div>
+            <div class="color-palette" id="badColorPalette"></div>
+        </div>
+    `;
+
+    renderColorPalette('goodColorPalette', selectedGoodColors, (colors) => {
+        selectedGoodColors = colors;
+    });
+
+    renderColorPalette('badColorPalette', selectedBadColors, (colors) => {
+        selectedBadColors = colors;
+    });
+}
+
+// ==========================================
+// STEP 5: Final Summary
+// ==========================================
+function renderStep5() {
+    const panelContent = document.getElementById('panelContent');
+    const fromDateStr = formatDateShort(selectedFromDate);
+    const toDateStr = formatDateShort(selectedToDate);
+    
+    if (isBadTime) {
+        panelContent.innerHTML = `
+            <div class="summary-box">
+                <div class="summary-title">✓ ENTRY READY</div>
+                <div class="summary-dates">
+                    <div class="summary-date-line"><strong>From:</strong> ${fromDateStr} | ${selectedFromTime}</div>
+                    <div class="summary-date-line"><strong>To:</strong> ${toDateStr} | ${selectedToTime}</div>
+                </div>
+                <div class="summary-badtime">
+                    <div class="summary-badtime-icon">⚫</div>
+                    <div class="summary-badtime-text">BAD TIME</div>
+                </div>
+            </div>
+        `;
+    } else {
+        let goodColorsHtml = '';
+        selectedGoodColors.forEach(color => {
+            goodColorsHtml += `
+                <div class="summary-color-item">
+                    <div class="summary-color-box" style="background: ${color}"></div>
+                    <span class="summary-color-hex">${color}</span>
+                </div>
+            `;
+        });
+
+        let badColorsHtml = '';
+        selectedBadColors.forEach(color => {
+            badColorsHtml += `
+                <div class="summary-color-item">
+                    <div class="summary-color-box" style="background: ${color}"></div>
+                    <span class="summary-color-hex">${color}</span>
+                </div>
+            `;
+        });
+
+        panelContent.innerHTML = `
+            <div class="summary-box">
+                <div class="summary-title">✓ ENTRY READY</div>
+                <div class="summary-dates">
+                    <div class="summary-date-line"><strong>From:</strong> ${fromDateStr} | ${selectedFromTime}</div>
+                    <div class="summary-date-line"><strong>To:</strong> ${toDateStr} | ${selectedToTime}</div>
+                </div>
+                <div class="summary-colors">
+                    ${selectedGoodColors.length > 0 ? `
+                        <div class="summary-color-section">
+                            <div class="summary-color-label">GOOD:</div>
+                            <div class="summary-color-items">${goodColorsHtml}</div>
+                        </div>
+                    ` : ''}
+                    ${selectedBadColors.length > 0 ? `
+                        <div class="summary-color-section">
+                            <div class="summary-color-label">BAD:</div>
+                            <div class="summary-color-items">${badColorsHtml}</div>
+                        </div>
+                    ` : ''}
+                </div>
+            </div>
+        `;
+    }
+}
+
+// ==========================================
+// Update Panel Buttons
+// ==========================================
+function updatePanelButtons() {
+    const panelButtons = document.getElementById('panelButtons');
+    if (!panelButtons) return;
+
+    let buttonsHtml = `
+        <button class="panel-btn cancel-btn" onclick="resetWorkflow()">Cancel</button>
+        <button class="panel-btn review-btn" onclick="openReviewMode()">Review</button>
+    `;
+
+    if (workflowStep === 4) {
+        buttonsHtml += `
+            <button class="panel-btn continue-btn" onclick="proceedToSummary()">Continue</button>
+            <button class="panel-btn badtime-btn" onclick="selectBadTime()">BAD TIME</button>
+        `;
+    }
+
+    if (workflowStep === 5) {
+        buttonsHtml += `
+            <button class="panel-btn add-entry-btn" onclick="saveEntry()">Add Entry</button>
+            <button class="panel-btn new-entry-btn" onclick="resetWorkflow()">New Entry</button>
+        `;
+    }
+
+    panelButtons.innerHTML = buttonsHtml;
+}
+
+// ==========================================
+// Time Selector Renderer (12x2 Grid)
+// ==========================================
+function renderTimeSelector(containerId, onSelect) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+
+    container.innerHTML = '';
+
+    // AM Row
+    for (let i = 1; i <= 12; i++) {
+        const btn = document.createElement('button');
+        btn.className = 'time-btn am';
+        btn.textContent = `${i} AM`;
+        btn.onclick = () => {
+            onSelect(`${i} AM`);
+        };
+        container.appendChild(btn);
+    }
+
+    // PM Row
+    for (let i = 1; i <= 12; i++) {
+        const btn = document.createElement('button');
+        btn.className = 'time-btn pm';
+        btn.textContent = `${i} PM`;
+        btn.onclick = () => {
+            onSelect(`${i} PM`);
+        };
+        container.appendChild(btn);
+    }
+}
+
+// ==========================================
+// Color Palette Renderer (8x2 Grid)
+// ==========================================
+function renderColorPalette(containerId, selectedColors, onChange) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+
+    container.innerHTML = '';
 
     COLOR_PALETTE.forEach(color => {
-        const goodBtn = document.createElement('button');
-        goodBtn.className = 'color-option';
-        goodBtn.style.background = color.hex;
-        goodBtn.dataset.color = color.hex;
-        goodBtn.dataset.name = color.name;
-        goodBtn.title = color.name;
-        goodBtn.addEventListener('click', (e) => selectGoodColor(e, color.hex, color.name));
-        goodPalette.appendChild(goodBtn);
+        const btn = document.createElement('button');
+        btn.className = 'color-btn';
+        btn.style.background = color;
+        
+        if (selectedColors.includes(color)) {
+            btn.classList.add('selected');
+        }
 
-        const badBtn = document.createElement('button');
-        badBtn.className = 'color-option';
-        badBtn.style.background = color.hex;
-        badBtn.dataset.color = color.hex;
-        badBtn.dataset.name = color.name;
-        badBtn.title = color.name;
-        badBtn.addEventListener('click', (e) => selectBadColor(e, color.hex, color.name));
-        badPalette.appendChild(badBtn);
+        btn.onclick = () => {
+            const index = selectedColors.indexOf(color);
+            if (index > -1) {
+                selectedColors.splice(index, 1);
+                btn.classList.remove('selected');
+            } else {
+                selectedColors.push(color);
+                btn.classList.add('selected');
+            }
+            onChange(selectedColors);
+        };
+
+        container.appendChild(btn);
     });
 }
 
-function selectGoodColor(event, hex, name) {
-    selectedGoodColor = { hex, name };
-    document.querySelectorAll('#goodColorPalette .color-option').forEach(btn => {
-        btn.classList.remove('selected');
-    });
-    if (event && event.currentTarget) event.currentTarget.classList.add('selected');
-    const sel = document.getElementById('selectedGoodColor');
-    if (sel) sel.value = name;
+// ==========================================
+// Workflow Actions
+// ==========================================
+function proceedToSummary() {
+    if (selectedGoodColors.length === 0 && selectedBadColors.length === 0) {
+        showToast('Please select at least one color or choose BAD TIME', 'error');
+        return;
+    }
+    isBadTime = false;
+    workflowStep = 5;
+    renderWorkflowUI();
 }
 
-function selectBadColor(event, hex, name) {
-    selectedBadColor = { hex, name };
-    document.querySelectorAll('#badColorPalette .color-option').forEach(btn => {
-        btn.classList.remove('selected');
-    });
-    if (event && event.currentTarget) event.currentTarget.classList.add('selected');
-    const sel = document.getElementById('selectedBadColor');
-    if (sel) sel.value = name;
+function selectBadTime() {
+    if (selectedGoodColors.length > 0 || selectedBadColors.length > 0) {
+        showToast('BAD TIME cannot have colors. Clear colors first.', 'error');
+        return;
+    }
+    isBadTime = true;
+    workflowStep = 5;
+    renderWorkflowUI();
 }
 
-// Continue in next part...
+// Continue in Part 3...
 // ==========================================
-// Add this to the end of app.js Part 1
+// Add this to the end of app.js Part 2
+// Part 3: Calendar, Saving & Review
 // ==========================================
 
 // ==========================================
-// Calendar Rendering
+// Admin Calendar Rendering
 // ==========================================
+function navigateAdminMonth(direction) {
+    adminCurrentDate.setMonth(adminCurrentDate.getMonth() + direction);
+    adminCurrentDate = new Date(adminCurrentDate);
+    renderAdminCalendar();
+}
+
+function renderAdminCalendar() {
+    const year = adminCurrentDate.getFullYear();
+    const month = adminCurrentDate.getMonth();
+
+    const monthNames = ['January', 'February', 'March', 'April', 'May', 'June',
+                        'July', 'August', 'September', 'October', 'November', 'December'];
+    const titleEl = document.getElementById('adminMonthYear');
+    if (titleEl) titleEl.textContent = `${monthNames[month]} ${year}`;
+
+    const firstDay = new Date(year, month, 1).getDay();
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const daysInPrevMonth = new Date(year, month, 0).getDate();
+
+    const grid = document.getElementById('adminCalendarGrid');
+    if (!grid) return;
+    grid.innerHTML = '';
+
+    const dayHeaders = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    dayHeaders.forEach(day => {
+        const header = document.createElement('div');
+        header.className = 'calendar-day-header';
+        header.textContent = day;
+        grid.appendChild(header);
+    });
+
+    // Previous month days
+    for (let i = firstDay - 1; i >= 0; i--) {
+        const dayNum = daysInPrevMonth - i;
+        const dayCell = createAdminDayCell(dayNum, month - 1, year, true);
+        grid.appendChild(dayCell);
+    }
+
+    // Current month days
+    const today = new Date();
+    for (let day = 1; day <= daysInMonth; day++) {
+        const isToday = (day === today.getDate() && month === today.getMonth() && year === today.getFullYear());
+        const dayCell = createAdminDayCell(day, month, year, false);
+        if (isToday) dayCell.classList.add('today');
+        grid.appendChild(dayCell);
+    }
+
+    // Next month filler
+    const totalCells = firstDay + daysInMonth;
+    const remainingCells = totalCells <= 35 ? 35 - totalCells : 42 - totalCells;
+    for (let day = 1; day <= remainingCells; day++) {
+        const dayCell = createAdminDayCell(day, month + 1, year, true);
+        grid.appendChild(dayCell);
+    }
+}
+
+function createAdminDayCell(day, month, year, isOtherMonth) {
+    const cell = document.createElement('div');
+    cell.className = 'calendar-day';
+    if (isOtherMonth) cell.classList.add('other-month');
+
+    const dayNumber = document.createElement('div');
+    dayNumber.className = 'day-number';
+    dayNumber.textContent = day;
+    cell.appendChild(dayNumber);
+
+    const cellDate = new Date(year, month, day);
+
+    // Check if selected
+    if (selectedFromDate && cellDate.getTime() === selectedFromDate.getTime()) {
+        cell.classList.add('selected');
+    }
+    if (selectedToDate && cellDate.getTime() === selectedToDate.getTime()) {
+        cell.classList.add('selected');
+    }
+
+    // Check if in range
+    if (selectedFromDate && selectedToDate) {
+        const from = selectedFromDate.getTime();
+        const to = selectedToDate.getTime();
+        const current = cellDate.getTime();
+        if (current > Math.min(from, to) && current < Math.max(from, to)) {
+            cell.classList.add('in-range');
+        }
+    }
+
+    cell.addEventListener('click', () => {
+        handleDateSelection(cellDate);
+    });
+
+    return cell;
+}
+
+function handleDateSelection(date) {
+    if (workflowStep === 0) {
+        // First date selection
+        selectedFromDate = date;
+        workflowStep = 1;
+        renderAdminCalendar();
+        renderWorkflowUI();
+    } else if (workflowStep === 2) {
+        // Second date selection
+        selectedToDate = date;
+        
+        // Auto-sort if needed
+        if (selectedToDate < selectedFromDate) {
+            const temp = selectedFromDate;
+            selectedFromDate = selectedToDate;
+            selectedToDate = temp;
+        }
+        
+        workflowStep = 3;
+        renderAdminCalendar();
+        renderWorkflowUI();
+    }
+}
+
+// ==========================================
+// Save Entry to Firebase
+// ==========================================
+function saveEntry() {
+    if (!selectedFromDate || !selectedToDate || !selectedFromTime || !selectedToTime) {
+        showToast('Missing required information', 'error');
+        return;
+    }
+
+    showLoading();
+
+    const fromDateTime = combineDateAndTime(selectedFromDate, selectedFromTime);
+    const toDateTime = combineDateAndTime(selectedToDate, selectedToTime);
+
+    const entryData = {
+        fromDate: firebase.firestore.Timestamp.fromDate(selectedFromDate),
+        toDate: firebase.firestore.Timestamp.fromDate(selectedToDate),
+        fromTime: selectedFromTime,
+        toTime: selectedToTime,
+        startDate: firebase.firestore.Timestamp.fromDate(fromDateTime),
+        endDate: firebase.firestore.Timestamp.fromDate(toDateTime),
+        goodColors: selectedGoodColors,
+        badColors: selectedBadColors,
+        badTime: isBadTime,
+        created: firebase.firestore.Timestamp.now()
+    };
+
+    // Convert colors to good/bad color objects for display
+    if (!isBadTime) {
+        if (selectedGoodColors.length > 0) {
+            entryData.goodColor = { hex: selectedGoodColors[0], name: getColorName(selectedGoodColors[0]) };
+        }
+        if (selectedBadColors.length > 0) {
+            entryData.badColor = { hex: selectedBadColors[0], name: getColorName(selectedBadColors[0]) };
+        }
+    }
+
+    db.collection(ENTRIES_COLLECTION)
+        .add(entryData)
+        .then(() => {
+            hideLoading();
+            showToast('Entry saved successfully!', 'success');
+            resetWorkflow();
+        })
+        .catch((error) => {
+            console.error('Error saving entry:', error);
+            hideLoading();
+            showToast('Error saving entry', 'error');
+        });
+}
+
+function combineDateAndTime(date, timeStr) {
+    const [time, period] = timeStr.split(' ');
+    let hour = parseInt(time);
+    
+    if (period === 'PM' && hour !== 12) {
+        hour += 12;
+    } else if (period === 'AM' && hour === 12) {
+        hour = 0;
+    }
+
+    const newDate = new Date(date);
+    newDate.setHours(hour, 0, 0, 0);
+    return newDate;
+}
+
+function getColorName(hex) {
+    const colorNames = {
+        '#000000': 'Black',
+        '#FFFFFF': 'White',
+        '#FF0000': 'Red',
+        '#008000': 'Green',
+        '#0000FF': 'Blue',
+        '#FFFF00': 'Yellow',
+        '#FFA500': 'Orange',
+        '#800080': 'Purple',
+        '#00FFFF': 'Cyan',
+        '#FF00FF': 'Magenta',
+        '#808080': 'Gray',
+        '#800000': 'Maroon',
+        '#000080': 'Navy',
+        '#A52A2A': 'Brown',
+        '#FFC0CB': 'Pink',
+        '#4B0082': 'Indigo'
+    };
+    return colorNames[hex.toUpperCase()] || hex;
+}
+
+// ==========================================
+// Review Mode
+// ==========================================
+function openReviewMode() {
+    showLoading();
+    
+    db.collection(ENTRIES_COLLECTION)
+        .orderBy('created', 'desc')
+        .limit(50)
+        .get()
+        .then((querySnapshot) => {
+            const container = document.getElementById('reviewEntriesList');
+            if (!container) {
+                hideLoading();
+                return;
+            }
+            container.innerHTML = '';
+
+            if (querySnapshot.empty) {
+                container.innerHTML = '<p style="text-align: center; color: #999; padding: 40px;">No entries saved yet</p>';
+                hideLoading();
+                document.getElementById('reviewModal').classList.add('active');
+                return;
+            }
+
+            querySnapshot.forEach((doc) => {
+                const entry = { id: doc.id, ...doc.data() };
+                container.appendChild(createReviewEntryCard(entry));
+            });
+
+            hideLoading();
+            document.getElementById('reviewModal').classList.add('active');
+        })
+        .catch((error) => {
+            console.error('Error loading entries:', error);
+            hideLoading();
+            showToast('Error loading entries', 'error');
+        });
+}
+
+function createReviewEntryCard(entry) {
+    const card = document.createElement('div');
+    card.className = 'review-entry-card';
+
+    const fromDateStr = formatDateShort(entry.fromDate.toDate());
+    const toDateStr = formatDateShort(entry.toDate.toDate());
+
+    let contentHtml = `
+        <button class="review-entry-delete" onclick="deleteReviewEntry('${entry.id}')">✕</button>
+        <div class="summary-title">✓ ENTRY READY</div>
+        <div class="summary-dates">
+            <div class="summary-date-line"><strong>From:</strong> ${fromDateStr} | ${entry.fromTime}</div>
+            <div class="summary-date-line"><strong>To:</strong> ${toDateStr} | ${entry.toTime}</div>
+        </div>
+    `;
+
+    if (entry.badTime) {
+        contentHtml += `
+            <div class="summary-badtime">
+                <div class="summary-badtime-icon">⚫</div>
+                <div class="summary-badtime-text">BAD TIME</div>
+            </div>
+        `;
+    } else {
+        let goodColorsHtml = '';
+        if (entry.goodColors && entry.goodColors.length > 0) {
+            entry.goodColors.forEach(color => {
+                goodColorsHtml += `
+                    <div class="summary-color-item">
+                        <div class="summary-color-box" style="background: ${color}"></div>
+                        <span class="summary-color-hex">${color}</span>
+                    </div>
+                `;
+            });
+        }
+
+        let badColorsHtml = '';
+        if (entry.badColors && entry.badColors.length > 0) {
+            entry.badColors.forEach(color => {
+                badColorsHtml += `
+                    <div class="summary-color-item">
+                        <div class="summary-color-box" style="background: ${color}"></div>
+                        <span class="summary-color-hex">${color}</span>
+                    </div>
+                `;
+            });
+        }
+
+        contentHtml += `<div class="summary-colors">`;
+        if (goodColorsHtml) {
+            contentHtml += `
+                <div class="summary-color-section">
+                    <div class="summary-color-label">GOOD:</div>
+                    <div class="summary-color-items">${goodColorsHtml}</div>
+                </div>
+            `;
+        }
+        if (badColorsHtml) {
+            contentHtml += `
+                <div class="summary-color-section">
+                    <div class="summary-color-label">BAD:</div>
+                    <div class="summary-color-items">${badColorsHtml}</div>
+                </div>
+            `;
+        }
+        contentHtml += `</div>`;
+    }
+
+    card.innerHTML = contentHtml;
+    return card;
+}
+
+function deleteReviewEntry(entryId) {
+    if (!entryId) return;
+
+    showLoading();
+    db.collection(ENTRIES_COLLECTION)
+        .doc(entryId)
+        .delete()
+        .then(() => {
+            hideLoading();
+            showToast('Entry deleted successfully', 'success');
+            openReviewMode(); // Refresh list
+        })
+        .catch((error) => {
+            console.error('Error deleting entry:', error);
+            hideLoading();
+            showToast('Error deleting entry', 'error');
+        });
+}
+
+function closeReviewModal() {
+    const modal = document.getElementById('reviewModal');
+    if (modal) modal.classList.remove('active');
+}
+
+// ==========================================
+// Public Calendar & List View
+// ==========================================
+
+function navigateMonth(direction) {
+    currentDate.setMonth(currentDate.getMonth() + direction);
+    currentDate = new Date(currentDate);
+    loadPublicCalendar();
+}
+
 function loadPublicCalendar() {
-    renderCalendar(currentDate, 'calendarGrid', 'currentMonthYear', false);
+    renderPublicCalendar(currentDate, 'calendarGrid', 'currentMonthYear');
 }
 
-function renderCalendar(date, gridId, titleId, isAdmin) {
+function renderPublicCalendar(date, gridId, titleId) {
     const year = date.getFullYear();
     const month = date.getMonth();
 
@@ -698,14 +1189,14 @@ function renderCalendar(date, gridId, titleId, isAdmin) {
     loadMonthEntries(year, month, (entries) => {
         for (let i = firstDay - 1; i >= 0; i--) {
             const dayNum = daysInPrevMonth - i;
-            const dayCell = createDayCell(dayNum, month - 1, year, true, entries, isAdmin);
+            const dayCell = createPublicDayCell(dayNum, month - 1, year, true, entries);
             grid.appendChild(dayCell);
         }
 
         const today = new Date();
         for (let day = 1; day <= daysInMonth; day++) {
             const isToday = (day === today.getDate() && month === today.getMonth() && year === today.getFullYear());
-            const dayCell = createDayCell(day, month, year, false, entries, isAdmin);
+            const dayCell = createPublicDayCell(day, month, year, false, entries);
             if (isToday) dayCell.classList.add('today');
             grid.appendChild(dayCell);
         }
@@ -713,13 +1204,13 @@ function renderCalendar(date, gridId, titleId, isAdmin) {
         const totalCells = firstDay + daysInMonth;
         const remainingCells = totalCells <= 35 ? 35 - totalCells : 42 - totalCells;
         for (let day = 1; day <= remainingCells; day++) {
-            const dayCell = createDayCell(day, month + 1, year, true, entries, isAdmin);
+            const dayCell = createPublicDayCell(day, month + 1, year, true, entries);
             grid.appendChild(dayCell);
         }
     });
 }
 
-function createDayCell(day, month, year, isOtherMonth, entries, isAdmin) {
+function createPublicDayCell(day, month, year, isOtherMonth, entries) {
     const cell = document.createElement('div');
     cell.className = 'calendar-day';
     if (isOtherMonth) cell.classList.add('other-month');
@@ -733,8 +1224,8 @@ function createDayCell(day, month, year, isOtherMonth, entries, isAdmin) {
     const dayEnd = new Date(year, month, day, 23, 59, 59, 999);
 
     const dayEntries = entries.filter(entry => {
-        const entryStart = (entry.startDate && entry.startDate.toDate) ? entry.startDate.toDate() : new Date(entry.startDate);
-        const entryEnd = (entry.endDate && entry.endDate.toDate) ? entry.endDate.toDate() : new Date(entry.endDate);
+        const entryStart = entry.startDate.toDate();
+        const entryEnd = entry.endDate.toDate();
         return (entryStart <= dayEnd && entryEnd >= dayStart);
     });
 
@@ -742,7 +1233,6 @@ function createDayCell(day, month, year, isOtherMonth, entries, isAdmin) {
         const indicators = document.createElement('div');
         indicators.className = 'day-indicators';
 
-        // Get unique good/bad colors and bad time
         let goodColorHex = null;
         let badColorHex = null;
         let hasBadTime = false;
@@ -750,7 +1240,7 @@ function createDayCell(day, month, year, isOtherMonth, entries, isAdmin) {
         dayEntries.forEach(e => {
             if (e.goodColor && !goodColorHex) goodColorHex = e.goodColor.hex;
             if (e.badColor && !badColorHex) badColorHex = e.badColor.hex;
-            if (!e.goodColor && !e.badColor) hasBadTime = true;
+            if (e.badTime) hasBadTime = true;
         });
 
         if (goodColorHex) {
@@ -777,33 +1267,14 @@ function createDayCell(day, month, year, isOtherMonth, entries, isAdmin) {
     }
 
     cell.addEventListener('click', () => {
-        openDayView(day, month, year, isAdmin);
+        openDayView(day, month, year);
     });
 
     return cell;
 }
 
-// ==========================================
-// Month Navigation
-// ==========================================
-function navigateMonth(direction) {
-    currentDate.setMonth(currentDate.getMonth() + direction);
-    currentDate = new Date(currentDate);
-    loadPublicCalendar();
-}
-
-function navigateAdminMonth(direction) {
-    adminCurrentDate.setMonth(adminCurrentDate.getMonth() + direction);
-    adminCurrentDate = new Date(adminCurrentDate);
-    renderCalendar(adminCurrentDate, 'adminCalendarGrid', 'adminCurrentMonthYear', true);
-}
-
-// ==========================================
-// Firestore Data Loading
-// ==========================================
 function loadMonthEntries(year, month, callback) {
     if (typeof db === 'undefined') {
-        console.warn('Firestore (db) not defined.');
         callback([]);
         return;
     }
@@ -818,7 +1289,7 @@ function loadMonthEntries(year, month, callback) {
             const entries = [];
             querySnapshot.forEach((doc) => {
                 const data = doc.data();
-                const entryStart = (data.startDate && data.startDate.toDate) ? data.startDate.toDate() : new Date(data.startDate);
+                const entryStart = data.startDate.toDate();
                 if (entryStart <= endDate) {
                     entries.push({ id: doc.id, ...data });
                 }
@@ -833,12 +1304,7 @@ function loadMonthEntries(year, month, callback) {
 
 function loadListView() {
     showLoading();
-    if (typeof db === 'undefined') {
-        showToast('Database not available', 'error');
-        hideLoading();
-        return;
-    }
-
+    
     db.collection(ENTRIES_COLLECTION)
         .orderBy('startDate', 'desc')
         .limit(50)
@@ -859,7 +1325,7 @@ function loadListView() {
 
             querySnapshot.forEach((doc) => {
                 const entry = { id: doc.id, ...doc.data() };
-                listContainer.appendChild(createEntryCard(entry, false));
+                listContainer.appendChild(createListEntryCard(entry));
             });
 
             hideLoading();
@@ -870,92 +1336,48 @@ function loadListView() {
         });
 }
 
-// ==========================================
-// Entry Card Creation
-// ==========================================
-function createEntryCard(entry, showActions) {
+function createListEntryCard(entry) {
     const card = document.createElement('div');
     card.className = 'entry-card';
 
+    const start = entry.startDate.toDate();
+    const end = entry.endDate.toDate();
+
     const timeRange = document.createElement('div');
     timeRange.className = 'entry-time-range';
-    const start = (entry.startDate && entry.startDate.toDate) ? entry.startDate.toDate() : new Date(entry.startDate);
-    const end = (entry.endDate && entry.endDate.toDate) ? entry.endDate.toDate() : new Date(entry.endDate);
     timeRange.textContent = formatDateRange(start, end);
     card.appendChild(timeRange);
 
-    if (entry.goodColor || entry.badColor) {
+    if (entry.badTime) {
+        const badTimeLabel = document.createElement('div');
+        badTimeLabel.style.cssText = 'font-weight: 700; color: #000; padding: 10px; background: #f5f5f5; border-radius: 8px; margin: 10px 0;';
+        badTimeLabel.textContent = '⚫ BAD TIME';
+        card.appendChild(badTimeLabel);
+    } else {
         const colorsDiv = document.createElement('div');
         colorsDiv.className = 'entry-colors';
 
         if (entry.goodColor) {
             const goodDiv = document.createElement('div');
             goodDiv.className = 'entry-color-item';
-            const goodBox = document.createElement('div');
-            goodBox.className = 'entry-color-box';
-            goodBox.style.background = entry.goodColor.hex;
-            const goodLabel = document.createElement('span');
-            goodLabel.className = 'entry-color-label';
-            goodLabel.textContent = `Good: ${entry.goodColor.name}`;
-            goodDiv.appendChild(goodBox);
-            goodDiv.appendChild(goodLabel);
+            goodDiv.innerHTML = `
+                <div class="entry-color-box" style="background: ${entry.goodColor.hex}"></div>
+                <span class="entry-color-label">Good: ${entry.goodColor.name}</span>
+            `;
             colorsDiv.appendChild(goodDiv);
         }
 
         if (entry.badColor) {
             const badDiv = document.createElement('div');
             badDiv.className = 'entry-color-item';
-            const badBox = document.createElement('div');
-            badBox.className = 'entry-color-box';
-            badBox.style.background = entry.badColor.hex;
-            const badLabel = document.createElement('span');
-            badLabel.className = 'entry-color-label';
-            badLabel.textContent = `Bad: ${entry.badColor.name}`;
-            badDiv.appendChild(badBox);
-            badDiv.appendChild(badLabel);
+            badDiv.innerHTML = `
+                <div class="entry-color-box" style="background: ${entry.badColor.hex}"></div>
+                <span class="entry-color-label">Bad: ${entry.badColor.name}</span>
+            `;
             colorsDiv.appendChild(badDiv);
         }
 
         card.appendChild(colorsDiv);
-    } else {
-        const badTimeLabel = document.createElement('div');
-        badTimeLabel.style.cssText = 'font-weight: 700; color: #000; padding: 10px; background: #f5f5f5; border-radius: 8px; margin: 10px 0;';
-        badTimeLabel.textContent = '⚫ BAD TIME';
-        card.appendChild(badTimeLabel);
-    }
-
-    if (entry.notes) {
-        const notes = document.createElement('div');
-        notes.className = 'entry-notes';
-        notes.textContent = entry.notes;
-        card.appendChild(notes);
-    }
-
-    if (showActions) {
-        const actions = document.createElement('div');
-        actions.className = 'entry-actions';
-
-        if (entry.isPending) {
-            const confirmBtn = document.createElement('button');
-            confirmBtn.className = 'entry-btn confirm';
-            confirmBtn.textContent = '✓ Confirm';
-            confirmBtn.onclick = () => confirmEntry(entry.id);
-            actions.appendChild(confirmBtn);
-        }
-
-        const editBtn = document.createElement('button');
-        editBtn.className = 'entry-btn edit';
-        editBtn.textContent = '✎ Edit';
-        editBtn.onclick = () => editEntry(entry);
-        actions.appendChild(editBtn);
-
-        const deleteBtn = document.createElement('button');
-        deleteBtn.className = 'entry-btn delete';
-        deleteBtn.textContent = '✕ Delete';
-        deleteBtn.onclick = () => deleteEntry(entry.id, entry.isPending);
-        actions.appendChild(deleteBtn);
-
-        card.appendChild(actions);
     }
 
     return card;
@@ -964,18 +1386,13 @@ function createEntryCard(entry, showActions) {
 // ==========================================
 // Day View Modal
 // ==========================================
-function openDayView(day, month, year, isAdmin) {
+function openDayView(day, month, year) {
     const dayDate = new Date(year, month, day);
     const startOfDay = new Date(year, month, day, 0, 0, 0, 0);
     const endOfDay = new Date(year, month, day, 23, 59, 59, 999);
 
     const titleEl = document.getElementById('dayViewTitle');
     if (titleEl) titleEl.textContent = formatDate(dayDate);
-
-    if (typeof db === 'undefined') {
-        showToast('Database not available', 'error');
-        return;
-    }
 
     db.collection(ENTRIES_COLLECTION)
         .get()
@@ -989,8 +1406,8 @@ function openDayView(day, month, year, isAdmin) {
 
             querySnapshot.forEach((doc) => {
                 const entry = { id: doc.id, ...doc.data() };
-                const entryStart = (entry.startDate && entry.startDate.toDate) ? entry.startDate.toDate() : new Date(entry.startDate);
-                const entryEnd = (entry.endDate && entry.endDate.toDate) ? entry.endDate.toDate() : new Date(entry.endDate);
+                const entryStart = entry.startDate.toDate();
+                const entryEnd = entry.endDate.toDate();
 
                 if (entryEnd >= startOfDay && entryStart <= endOfDay) {
                     dayEntries.push(entry);
@@ -1002,98 +1419,47 @@ function openDayView(day, month, year, isAdmin) {
                 container.innerHTML = '<p style="text-align: center; color: #999; padding: 40px;">No entries for this day</p>';
             } else {
                 dayEntries.forEach(entry => {
-                    container.appendChild(createDayEntryCard(entry, isAdmin));
+                    container.appendChild(createDayEntryCard(entry));
                 });
             }
 
-            const modal = document.getElementById('dayViewModal');
-            if (modal) modal.classList.add('active');
+            document.getElementById('dayViewModal').classList.add('active');
         })
         .catch((error) => {
             console.error('Error loading day entries:', error);
         });
 }
 
-function createDayEntryCard(entry, isAdmin) {
+function createDayEntryCard(entry) {
     const card = document.createElement('div');
     card.className = 'day-entry-card';
 
-    if (entry.goodColor || entry.badColor) {
-        card.classList.add('has-colors');
+    const start = entry.startDate.toDate();
+    const end = entry.endDate.toDate();
 
-        const timeDiv = document.createElement('div');
-        timeDiv.style.cssText = 'font-weight: 600; margin-bottom: 10px; font-size: 1.05rem;';
-        const start = (entry.startDate && entry.startDate.toDate) ? entry.startDate.toDate() : new Date(entry.startDate);
-        const end = (entry.endDate && entry.endDate.toDate) ? entry.endDate.toDate() : new Date(entry.endDate);
-        timeDiv.textContent = formatTimeRange(start, end);
-        card.appendChild(timeDiv);
-
-        const colorsDiv = document.createElement('div');
-        colorsDiv.className = 'entry-colors';
-
-        if (entry.goodColor) {
-            const item = document.createElement('div');
-            item.className = 'entry-color-item';
-            item.innerHTML = `
-                <div class="entry-color-box" style="background: ${entry.goodColor.hex}"></div>
-                <span class="entry-color-label">Good: ${entry.goodColor.name}</span>
-            `;
-            colorsDiv.appendChild(item);
-        }
-
-        if (entry.badColor) {
-            const item = document.createElement('div');
-            item.className = 'entry-color-item';
-            item.innerHTML = `
-                <div class="entry-color-box" style="background: ${entry.badColor.hex}"></div>
-                <span class="entry-color-label">Bad: ${entry.badColor.name}</span>
-            `;
-            colorsDiv.appendChild(item);
-        }
-
-        card.appendChild(colorsDiv);
+    if (entry.badTime) {
+        card.innerHTML = `
+            <div style="font-weight: 700; font-size: 1.1rem;">⚫ BAD TIME</div>
+            <div style="margin-top: 8px; color: #666;">${formatTimeRange(start, end)}</div>
+        `;
     } else {
-        card.classList.add('bad-time');
-
-        const timeDiv = document.createElement('div');
-        timeDiv.style.cssText = 'font-weight: 700; font-size: 1.1rem;';
-        timeDiv.textContent = '⚫ BAD TIME';
-        card.appendChild(timeDiv);
-
-        const start = (entry.startDate && entry.startDate.toDate) ? entry.startDate.toDate() : new Date(entry.startDate);
-        const end = (entry.endDate && entry.endDate.toDate) ? entry.endDate.toDate() : new Date(entry.endDate);
-
-        const rangeDiv = document.createElement('div');
-        rangeDiv.style.cssText = 'margin-top: 8px; color: #666;';
-        rangeDiv.textContent = formatTimeRange(start, end);
-        card.appendChild(rangeDiv);
-    }
-
-    if (entry.notes) {
-        const notes = document.createElement('div');
-        notes.style.cssText = 'margin-top: 10px; font-style: italic; color: #666; font-size: 0.95rem;';
-        notes.textContent = entry.notes;
-        card.appendChild(notes);
-    }
-
-    if (isAdmin) {
-        const actions = document.createElement('div');
-        actions.className = 'entry-actions';
-        actions.style.marginTop = '15px';
-
-        const editBtn = document.createElement('button');
-        editBtn.className = 'entry-btn edit';
-        editBtn.textContent = '✎ Edit';
-        editBtn.onclick = () => { closeDayViewModal(); editEntry(entry); };
-        actions.appendChild(editBtn);
-
-        const deleteBtn = document.createElement('button');
-        deleteBtn.className = 'entry-btn delete';
-        deleteBtn.textContent = '✕ Delete';
-        deleteBtn.onclick = () => { closeDayViewModal(); deleteEntry(entry.id, false); };
-        actions.appendChild(deleteBtn);
-
-        card.appendChild(actions);
+        card.innerHTML = `
+            <div style="font-weight: 600; margin-bottom: 10px; font-size: 1.05rem;">${formatTimeRange(start, end)}</div>
+            <div class="entry-colors">
+                ${entry.goodColor ? `
+                    <div class="entry-color-item">
+                        <div class="entry-color-box" style="background: ${entry.goodColor.hex}"></div>
+                        <span class="entry-color-label">Good: ${entry.goodColor.name}</span>
+                    </div>
+                ` : ''}
+                ${entry.badColor ? `
+                    <div class="entry-color-item">
+                        <div class="entry-color-box" style="background: ${entry.badColor.hex}"></div>
+                        <span class="entry-color-label">Bad: ${entry.badColor.name}</span>
+                    </div>
+                ` : ''}
+            </div>
+        `;
     }
 
     return card;
@@ -1104,421 +1470,14 @@ function closeDayViewModal() {
     if (modal) modal.classList.remove('active');
 }
 
-// Continue with remaining functions in next comment...
-// ==========================================
-// Add this to the end of app.js Part 2
-// ==========================================
-
-// ==========================================
-// Admin Stats
-// ==========================================
-function loadAdminStats() {
-    if (typeof db === 'undefined') return;
-    const now = new Date();
-    const firstDayOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-
-    db.collection(PENDING_ENTRIES_COLLECTION)
-        .get()
-        .then((snapshot) => {
-            const el = document.getElementById('statPending');
-            if (el) el.textContent = snapshot.size;
-        });
-
-    db.collection(ENTRIES_COLLECTION)
-        .where('createdAt', '>=', firebase.firestore.Timestamp.fromDate(firstDayOfMonth))
-        .get()
-        .then((snapshot) => {
-            const el = document.getElementById('statThisMonth');
-            if (el) el.textContent = snapshot.size;
-        });
-
-    db.collection(ENTRIES_COLLECTION)
-        .get()
-        .then((snapshot) => {
-            const el = document.getElementById('statTotal');
-            if (el) el.textContent = snapshot.size;
-        });
-}
-
-// ==========================================
-// Admin Actions
-// ==========================================
-function showReviewEntries() {
-    const dashboard = document.querySelector('.admin-dashboard');
-    const reviewView = document.getElementById('reviewEntriesView');
-    if (dashboard) dashboard.style.display = 'none';
-    if (reviewView) reviewView.style.display = 'block';
-
-    showLoading();
-    db.collection(PENDING_ENTRIES_COLLECTION)
-        .orderBy('createdAt', 'desc')
-        .get()
-        .then((querySnapshot) => {
-            const container = document.getElementById('reviewEntryList');
-            if (!container) {
-                hideLoading();
-                return;
-            }
-            container.innerHTML = '';
-
-            if (querySnapshot.empty) {
-                container.innerHTML = '<p style="text-align: center; color: #999; padding: 40px;">No pending entries</p>';
-                hideLoading();
-                return;
-            }
-
-            querySnapshot.forEach((doc) => {
-                const entry = { id: doc.id, isPending: true, ...doc.data() };
-                container.appendChild(createEntryCard(entry, true));
-            });
-
-            hideLoading();
-        })
-        .catch((error) => {
-            console.error('Error loading pending entries:', error);
-            hideLoading();
-        });
-}
-
-function showConfirmedEntries() {
-    const dashboard = document.querySelector('.admin-dashboard');
-    const adminListView = document.getElementById('adminListView');
-    if (dashboard) dashboard.style.display = 'none';
-    if (adminListView) adminListView.style.display = 'block';
-
-    showLoading();
-    db.collection(ENTRIES_COLLECTION)
-        .orderBy('startDate', 'desc')
-        .limit(50)
-        .get()
-        .then((querySnapshot) => {
-            const container = document.getElementById('adminEntryList');
-            if (!container) {
-                hideLoading();
-                return;
-            }
-            container.innerHTML = '';
-
-            if (querySnapshot.empty) {
-                container.innerHTML = '<p style="text-align: center; color: #999; padding: 40px;">No confirmed entries</p>';
-                hideLoading();
-                return;
-            }
-
-            querySnapshot.forEach((doc) => {
-                const entry = { id: doc.id, ...doc.data() };
-                container.appendChild(createEntryCard(entry, true));
-            });
-
-            hideLoading();
-        })
-        .catch((error) => {
-            console.error('Error loading confirmed entries:', error);
-            hideLoading();
-        });
-}
-
-function showAdminCalendar() {
-    const dashboard = document.querySelector('.admin-dashboard');
-    if (dashboard) dashboard.style.display = 'none';
-    const adminCalendarView = document.getElementById('adminCalendarView');
-    if (adminCalendarView) adminCalendarView.style.display = 'block';
-    renderCalendar(adminCurrentDate, 'adminCalendarGrid', 'adminCurrentMonthYear', true);
-}
-
-// ==========================================
-// Add/Edit Entry
-// ==========================================
-function openAddEntryModal() {
-    editingEntryId = null;
-    const titleEl = document.getElementById('entryModalTitle');
-    if (titleEl) titleEl.textContent = 'Add New Entry';
-    const modal = document.getElementById('addEntryModal');
-    if (modal) modal.classList.add('active');
-
-    const now = new Date();
-    const startTime = new Date(now.getTime() + 60 * 60 * 1000);
-    startTime.setMinutes(0, 0, 0);
-    const endTime = new Date(startTime.getTime() + 2 * 60 * 60 * 1000);
-
-    const startInput = document.getElementById('startDateTime');
-    const endInput = document.getElementById('endDateTime');
-    const notesInput = document.getElementById('entryNotes');
-    const selectedGoodInput = document.getElementById('selectedGoodColor');
-    const selectedBadInput = document.getElementById('selectedBadColor');
-
-    if (startInput) startInput.value = formatDateTimeLocal(startTime);
-    if (endInput) endInput.value = formatDateTimeLocal(endTime);
-    if (notesInput) notesInput.value = '';
-    if (selectedGoodInput) selectedGoodInput.value = '';
-    if (selectedBadInput) selectedBadInput.value = '';
-
-    selectedGoodColor = null;
-    selectedBadColor = null;
-    pendingEntryData = null;
-
-    document.querySelectorAll('.color-option').forEach(btn => btn.classList.remove('selected'));
-}
-
-function editEntry(entry) {
-    if (!entry) {
-        showToast('No entry data to edit', 'error');
-        return;
-    }
-
-    editingEntryId = entry.id || null;
-    const titleEl = document.getElementById('entryModalTitle');
-    if (titleEl) titleEl.textContent = 'Edit Entry';
-    const modal = document.getElementById('addEntryModal');
-    if (modal) modal.classList.add('active');
-
-    const startInput = document.getElementById('startDateTime');
-    const endInput = document.getElementById('endDateTime');
-    const notesInput = document.getElementById('entryNotes');
-    const selectedGoodInput = document.getElementById('selectedGoodColor');
-    const selectedBadInput = document.getElementById('selectedBadColor');
-
-    const startDate = (entry.startDate && entry.startDate.toDate) ? entry.startDate.toDate() : new Date(entry.startDate);
-    const endDate = (entry.endDate && entry.endDate.toDate) ? entry.endDate.toDate() : new Date(entry.endDate);
-
-    if (startInput) startInput.value = formatDateTimeLocal(startDate);
-    if (endInput) endInput.value = formatDateTimeLocal(endDate);
-    if (notesInput) notesInput.value = entry.notes || '';
-
-    selectedGoodColor = null;
-    selectedBadColor = null;
-    document.querySelectorAll('.color-option').forEach(btn => btn.classList.remove('selected'));
-    if (selectedGoodInput) selectedGoodInput.value = '';
-    if (selectedBadInput) selectedBadInput.value = '';
-
-    if (entry.goodColor) {
-        selectedGoodColor = entry.goodColor;
-        if (selectedGoodInput) selectedGoodInput.value = entry.goodColor.name;
-        const goodBtn = document.querySelector(`#goodColorPalette .color-option[data-color="${entry.goodColor.hex}"]`);
-        if (goodBtn) goodBtn.classList.add('selected');
-    }
-
-    if (entry.badColor) {
-        selectedBadColor = entry.badColor;
-        if (selectedBadInput) selectedBadInput.value = entry.badColor.name;
-        const badBtn = document.querySelector(`#badColorPalette .color-option[data-color="${entry.badColor.hex}"]`);
-        if (badBtn) badBtn.classList.add('selected');
-    }
-
-    pendingEntryData = {
-        startDate: startDate,
-        endDate: endDate,
-        goodColor: entry.goodColor || null,
-        badColor: entry.badColor || null,
-        notes: entry.notes || ''
-    };
-}
-
-function closeAddEntryModal() {
-    const modal = document.getElementById('addEntryModal');
-    if (modal) modal.classList.remove('active');
-    editingEntryId = null;
-}
-
-// ==========================================
-// Validate & Confirm
-// ==========================================
-function validateAndShowConfirm() {
-    const startDateTimeInput = document.getElementById('startDateTime') ? document.getElementById('startDateTime').value : '';
-    const endDateTimeInput = document.getElementById('endDateTime') ? document.getElementById('endDateTime').value : '';
-
-    if (!startDateTimeInput || !endDateTimeInput) {
-        showToast('Please select start and end date/time', 'error');
-        return;
-    }
-
-    const startDateTime = new Date(startDateTimeInput);
-    const endDateTime = new Date(endDateTimeInput);
-    const notes = document.getElementById('entryNotes') ? document.getElementById('entryNotes').value.trim() : '';
-
-    if (isNaN(startDateTime.getTime()) || isNaN(endDateTime.getTime())) {
-        showToast('Invalid date/time format', 'error');
-        return;
-    }
-
-    if (endDateTime <= startDateTime) {
-        showToast('End time must be after start time', 'error');
-        return;
-    }
-
-    pendingEntryData = {
-        startDate: startDateTime,
-        endDate: endDateTime,
-        goodColor: selectedGoodColor,
-        badColor: selectedBadColor,
-        notes: notes
-    };
-
-    const confirmContent = document.getElementById('confirmEntryContent');
-    if (!confirmContent) return;
-
-    if (selectedGoodColor || selectedBadColor) {
-        let html = '<h4>Do you want to add?</h4>';
-        html += '<div class="confirm-colors">';
-        if (selectedGoodColor) {
-            html += `
-                <div class="confirm-color-item">
-                    <div class="confirm-color-box" style="background: ${selectedGoodColor.hex}"></div>
-                    <div class="confirm-color-label">Good Color: ${selectedGoodColor.name}</div>
-                </div>
-            `;
-        }
-        if (selectedBadColor) {
-            html += `
-                <div class="confirm-color-item">
-                    <div class="confirm-color-box" style="background: ${selectedBadColor.hex}"></div>
-                    <div class="confirm-color-label">Bad Color: ${selectedBadColor.name}</div>
-                </div>
-            `;
-        }
-        html += '</div>';
-        html += `<div class="confirm-time">${formatDateRange(startDateTime, endDateTime)}</div>`;
-        confirmContent.innerHTML = html;
-    } else {
-        confirmContent.innerHTML = `
-            <h4>Do you want to add?</h4>
-            <div style="font-size: 1.5rem; font-weight: 700; margin: 30px 0;">⚫ BAD TIME</div>
-            <div class="confirm-time">${formatDateRange(startDateTime, endDateTime)}</div>
-        `;
-    }
-
-    closeAddEntryModal();
-    const confirmModal = document.getElementById('confirmEntryModal');
-    if (confirmModal) confirmModal.classList.add('active');
-}
-
-function closeConfirmEntryModal() {
-    const modal = document.getElementById('confirmEntryModal');
-    if (modal) modal.classList.remove('active');
-}
-
-// ==========================================
-// Save Entry
-// ==========================================
-function saveNewEntry() {
-    if (!pendingEntryData || !pendingEntryData.startDate || !pendingEntryData.endDate) {
-        showToast('No entry data found. Please try again.', 'error');
-        return;
-    }
-
-    showLoading();
-    closeConfirmEntryModal();
-
-    const entryData = {
-        startDate: firebase.firestore.Timestamp.fromDate(pendingEntryData.startDate),
-        endDate: firebase.firestore.Timestamp.fromDate(pendingEntryData.endDate),
-        notes: pendingEntryData.notes || '',
-        createdAt: firebase.firestore.Timestamp.now()
-    };
-
-    if (pendingEntryData.goodColor) {
-        entryData.goodColor = pendingEntryData.goodColor;
-    }
-    if (pendingEntryData.badColor) {
-        entryData.badColor = pendingEntryData.badColor;
-    }
-
-    let operationPromise;
-    if (editingEntryId) {
-        const updateData = Object.assign({}, entryData);
-        delete updateData.createdAt;
-        operationPromise = db.collection(ENTRIES_COLLECTION).doc(editingEntryId).update(updateData);
-    } else {
-        operationPromise = db.collection(PENDING_ENTRIES_COLLECTION).add(entryData);
-    }
-
-    operationPromise
-        .then(() => {
-            hideLoading();
-            showToast(editingEntryId ? 'Entry updated successfully!' : 'Entry added successfully! Pending review.', 'success');
-            loadAdminStats();
-            editingEntryId = null;
-            pendingEntryData = null;
-
-            const reviewVisible = document.getElementById('reviewEntriesView') && document.getElementById('reviewEntriesView').style.display !== 'none';
-            const adminListVisible = document.getElementById('adminListView') && document.getElementById('adminListView').style.display !== 'none';
-            const adminCalendarVisible = document.getElementById('adminCalendarView') && document.getElementById('adminCalendarView').style.display !== 'none';
-
-            if (reviewVisible) showReviewEntries();
-            else if (adminListVisible) showConfirmedEntries();
-            else if (adminCalendarVisible) showAdminCalendar();
-        })
-        .catch((error) => {
-            console.error('Error saving entry:', error);
-            hideLoading();
-            showToast('Error saving entry. Please try again.', 'error');
-        });
-}
-
-// ==========================================
-// Confirm/Delete Entry
-// ==========================================
-function confirmEntry(entryId) {
-    if (!entryId) return;
-    showLoading();
-
-    db.collection(PENDING_ENTRIES_COLLECTION)
-        .doc(entryId)
-        .get()
-        .then((doc) => {
-            if (!doc.exists) throw new Error('Entry not found');
-
-            const entryData = doc.data();
-            entryData.confirmedAt = firebase.firestore.Timestamp.now();
-
-            return db.collection(ENTRIES_COLLECTION).add(entryData);
-        })
-        .then(() => {
-            return db.collection(PENDING_ENTRIES_COLLECTION).doc(entryId).delete();
-        })
-        .then(() => {
-            hideLoading();
-            showToast('Entry confirmed and published!', 'success');
-            loadAdminStats();
-            showReviewEntries();
-        })
-        .catch((error) => {
-            console.error('Error confirming entry:', error);
-            hideLoading();
-            showToast('Error confirming entry. Please try again.', 'error');
-        });
-}
-
-function deleteEntry(entryId, isPending) {
-    if (!entryId) return;
-    showLoading();
-
-    const collection = isPending ? PENDING_ENTRIES_COLLECTION : ENTRIES_COLLECTION;
-
-    db.collection(collection)
-        .doc(entryId)
-        .delete()
-        .then(() => {
-            hideLoading();
-            showToast('Entry deleted successfully', 'success');
-            loadAdminStats();
-
-            if (isPending) {
-                showReviewEntries();
-            } else {
-                showConfirmedEntries();
-            }
-        })
-        .catch((error) => {
-            console.error('Error deleting entry:', error);
-            hideLoading();
-            showToast('Error deleting entry. Please try again.', 'error');
-        });
-}
-
 // ==========================================
 // Utility Functions
 // ==========================================
+function formatDateShort(date) {
+    const d = date instanceof Date ? date : date.toDate();
+    return d.toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
 function formatDate(date) {
     const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
     return date.toLocaleDateString('en-US', options);
@@ -1560,16 +1519,6 @@ function formatTimeRange(start, end) {
     });
 
     return `${startStr} - ${endStr}`;
-}
-
-function formatDateTimeLocal(date) {
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    const hours = String(date.getHours()).padStart(2, '0');
-    const minutes = String(date.getMinutes()).padStart(2, '0');
-
-    return `${year}-${month}-${day}T${hours}:${minutes}`;
 }
 
 function showLoading() {

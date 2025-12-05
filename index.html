@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Jyotish Calendar - Muhurat Timings</title>
     <link rel="stylesheet" href="styles.css">
     <link rel="manifest" href="manifest.json">
@@ -49,9 +49,7 @@
                     <p style="text-align: center; margin-bottom: 20px; color: #666;">
                         Scan this QR code with Google Authenticator app
                     </p>
-                    <div id="qrCodeContainer" style="text-align: center; margin: 20px 0;">
-                        <canvas id="qrCanvas" style="max-width: 250px; height: auto; margin: 0 auto; display: block;"></canvas>
-                    </div>
+                    <div id="qrCodeContainer" class="qrcc" style="text-align: center; margin: 20px 0;"></div>
                     <div style="background: #f5f5f5; padding: 15px; border-radius: 8px; margin: 20px 0;">
                         <p style="font-size: 0.9rem; color: #666; margin-bottom: 8px; text-align: center;">Manual Entry Key:</p>
                         <p id="secretKeyDisplay" style="font-family: monospace; font-size: 1.1rem; text-align: center; word-break: break-all; color: #000; font-weight: 600;"></p>
@@ -106,8 +104,6 @@
 
         <!-- Public View -->
         <div id="publicView" class="view-container active">
-            
-            <!-- Single Toggle Button -->
             <div class="controls-wrapper">
                 <button id="viewToggleBtn" class="view-toggle-btn">
                     <span id="viewToggleIcon">📅</span>
@@ -115,139 +111,58 @@
                 </button>
             </div>
 
-            <!-- Calendar View -->
             <div id="calendarContainer" class="calendar-container">
                 <div class="calendar-header">
-                    <button id="prevMonthBtn" class="month-nav-btn">← Previous</button>
+                    <button id="prevMonthBtn" class="month-nav-btn">←</button>
                     <h2 id="currentMonthYear" class="month-title"></h2>
-                    <button id="nextMonthBtn" class="month-nav-btn">Next →</button>
+                    <button id="nextMonthBtn" class="month-nav-btn">→</button>
                 </div>
                 <div id="calendarGrid" class="calendar-grid"></div>
             </div>
 
-            <!-- List View -->
             <div id="listContainer" class="list-container" style="display: none;">
                 <div id="entryList" class="entry-list"></div>
             </div>
         </div>
 
-        <!-- Admin View -->
+        <!-- Admin View - NEW WORKFLOW -->
         <div id="adminView" class="view-container">
             
-            <!-- Admin Dashboard -->
-            <div class="admin-dashboard">
-                <h2 class="dashboard-title">Admin Dashboard</h2>
-                
-                <!-- Statistics Cards -->
-                <div class="stats-grid">
-                    <div class="stat-card">
-                        <div class="stat-value" id="statPending">0</div>
-                        <div class="stat-label">Pending Review</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-value" id="statThisMonth">0</div>
-                        <div class="stat-label">Added This Month</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-value" id="statTotal">0</div>
-                        <div class="stat-label">Total Entries</div>
-                    </div>
-                </div>
-
-                <!-- Admin Action Buttons -->
-                <div class="admin-actions-wrapper">
-                    <div class="admin-actions">
-                        <button id="addEntryBtn" class="admin-btn primary">➕ Add Entry</button>
-                        <button id="reviewEntryBtn" class="admin-btn secondary">📋 Review Entries</button>
-                        <button id="confirmedEntryBtn" class="admin-btn secondary">✅ Confirmed Entries</button>
-                        <button id="adminCalendarBtn" class="admin-btn secondary">📅 Calendar View</button>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Admin List View -->
-            <div id="adminListView" class="admin-list-view" style="display: none;">
-                <button class="back-btn" onclick="showAdminDashboard()">← Back to Dashboard</button>
-                <h3>Confirmed Entries</h3>
-                <div id="adminEntryList" class="entry-list admin-list"></div>
-            </div>
-
-            <!-- Admin Calendar View -->
-            <div id="adminCalendarView" class="admin-calendar-view" style="display: none;">
-                <button class="back-btn" onclick="showAdminDashboard()">← Back to Dashboard</button>
+            <!-- Admin Calendar for Date Selection -->
+            <div id="adminCalendarSection" class="admin-section">
                 <div class="calendar-header">
-                    <button id="adminPrevMonthBtn" class="month-nav-btn">← Previous</button>
-                    <h2 id="adminCurrentMonthYear" class="month-title"></h2>
-                    <button id="adminNextMonthBtn" class="month-nav-btn">Next →</button>
+                    <button id="adminPrevMonth" class="month-nav-btn">← Previous</button>
+                    <h2 id="adminMonthYear" class="month-title"></h2>
+                    <button id="adminNextMonth" class="month-nav-btn">Next →</button>
                 </div>
-                <div id="adminCalendarGrid" class="calendar-grid"></div>
+                <div id="adminCalendarGrid" class="admin-calendar-grid"></div>
             </div>
 
-            <!-- Review Entries View -->
-            <div id="reviewEntriesView" class="review-entries-view" style="display: none;">
-                <button class="back-btn" onclick="showAdminDashboard()">← Back to Dashboard</button>
-                <div class="review-header">
-                    <h3>Pending Entries for Review</h3>
+            <!-- Control Panel -->
+            <div id="controlPanel" class="control-panel">
+                <div id="panelContent" class="panel-content">
+                    <!-- Dynamic content based on step -->
                 </div>
-                <div id="reviewEntryList" class="entry-list review-list"></div>
+                <div id="panelButtons" class="panel-buttons">
+                    <button id="cancelBtn" class="panel-btn cancel-btn" onclick="resetWorkflow()">Cancel</button>
+                    <button id="reviewBtn" class="panel-btn review-btn" onclick="openReviewMode()">Review</button>
+                </div>
             </div>
+
         </div>
 
-        <!-- Modal for Add/Edit Entry -->
-        <div id="addEntryModal" class="modal">
-            <div class="modal-content">
+        <!-- Review Modal -->
+        <div id="reviewModal" class="modal">
+            <div class="modal-content review-modal">
                 <div class="modal-header">
-                    <h3 id="entryModalTitle">Add New Entry</h3>
-                    <button class="close-btn" onclick="closeAddEntryModal()">✕</button>
+                    <h3>Review Saved Entries</h3>
+                    <button class="close-btn" onclick="closeReviewModal()">✕</button>
                 </div>
                 <div class="modal-body">
-                    <div class="form-group">
-                        <label>Start Date & Time</label>
-                        <input type="datetime-local" id="startDateTime" class="form-input">
-                    </div>
-
-                    <div class="form-group">
-                        <label>End Date & Time</label>
-                        <input type="datetime-local" id="endDateTime" class="form-input">
-                    </div>
-
-                    <div class="form-group">
-                        <label>Good Color</label>
-                        <div class="color-palette" id="goodColorPalette"></div>
-                        <input type="text" id="selectedGoodColor" class="form-input" readonly placeholder="No color selected">
-                    </div>
-
-                    <div class="form-group">
-                        <label>Bad Color</label>
-                        <div class="color-palette" id="badColorPalette"></div>
-                        <input type="text" id="selectedBadColor" class="form-input" readonly placeholder="No color selected">
-                    </div>
-
-                    <div class="form-group">
-                        <label>Notes (Optional)</label>
-                        <textarea id="entryNotes" class="form-input" rows="2" placeholder="Any additional notes..."></textarea>
-                    </div>
+                    <div id="reviewEntriesList" class="review-entries-list"></div>
                 </div>
                 <div class="modal-footer">
-                    <button class="modal-btn cancel" onclick="closeAddEntryModal()">Cancel</button>
-                    <button id="saveEntryBtn" class="modal-btn primary">Save Entry</button>
-                </div>
-            </div>
-        </div>
-
-        <!-- Entry Confirmation Modal -->
-        <div id="confirmEntryModal" class="modal">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h3>Confirm Entry</h3>
-                    <button class="close-btn" onclick="closeConfirmEntryModal()">✕</button>
-                </div>
-                <div class="modal-body">
-                    <div id="confirmEntryContent" class="confirm-entry-content"></div>
-                </div>
-                <div class="modal-footer">
-                    <button class="modal-btn cancel" onclick="closeConfirmEntryModal()">Cancel</button>
-                    <button id="finalSaveBtn" class="modal-btn primary">Confirm & Save</button>
+                    <button class="modal-btn primary" onclick="closeReviewModal()">Back</button>
                 </div>
             </div>
         </div>
@@ -272,8 +187,9 @@
 
         <!-- Footer Credit -->
         <footer class="app-footer">
-            <p>Developed by <a href="mailto:hodarsagar@gmail.com">Sagar Hodar</a></p>
+            <p>Developed by <a href="https://sagarhodar.pages.dev">Sagar Hodar</a></p>
         </footer>
+
 
     </div>
 
