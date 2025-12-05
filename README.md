@@ -362,7 +362,10 @@ Is now ready to use! 🕉️✨
 
 ---
 
-**Developed by Sagar Hodar** | hodarsagar@gmail.com#   s h u b h t i t h i  
- #   s h u b h t i t h i  
- #   s h u b h t i t h i  
+**Developed by Sagar Hodar** | hodarsagar@gmail.com#   s h u b h t i t h i 
+ 
+ #   s h u b h t i t h i 
+ 
+ #   s h u b h t i t h i 
+ 
  
